@@ -4,15 +4,54 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
+import type { Role } from "./lib/types";
 
-const navItems = [
-  { href: "/", label: "Home" },
-  { href: "/hackathons", label: "Hackathons" },
-  { href: "/student/verification", label: "Verification" },
-  { href: "/student/pass", label: "My QR Pass" },
-  { href: "/judge", label: "Judging" },
-  { href: "/admin", label: "Admin" },
-];
+type NavItem = { href: string; label: string };
+
+// Student sees: Home, Hackathons, My Verification, My QR Pass
+// Organizer (admin) sees: Home, Hackathons, Create Hackathon, Admin Dashboard
+// Judge / scanners: minimal (legacy access via direct URL)
+const NAV_BY_ROLE: Record<Role | "guest", NavItem[]> = {
+  student: [
+    { href: "/", label: "Home" },
+    { href: "/hackathons", label: "Hackathons" },
+    { href: "/student/verification", label: "Verification" },
+    { href: "/student/pass", label: "My QR Pass" },
+  ],
+  admin: [
+    { href: "/", label: "Home" },
+    { href: "/hackathons", label: "Hackathons" },
+    { href: "/hackathons/create", label: "Create hackathon" },
+    { href: "/admin", label: "Dashboard" },
+  ],
+  judge: [
+    { href: "/", label: "Home" },
+    { href: "/hackathons", label: "Hackathons" },
+    { href: "/judge", label: "Judging" },
+  ],
+  scanner_gate: [{ href: "/scanner/gate", label: "Gate Scanner" }],
+  scanner_food: [{ href: "/scanner/food", label: "Food Scanner" }],
+  guest: [
+    { href: "/", label: "Home" },
+    { href: "/hackathons", label: "Hackathons" },
+  ],
+};
+
+const ROLE_LABELS: Record<Role, string> = {
+  student: "Student",
+  judge: "Judge",
+  admin: "Organizer",
+  scanner_gate: "Gate",
+  scanner_food: "Food",
+};
+
+const ROLE_COLORS: Record<Role, string> = {
+  student: "bg-blue-50 text-blue-700",
+  judge: "bg-violet-50 text-violet-700",
+  admin: "bg-emerald-50 text-emerald-700",
+  scanner_gate: "bg-slate-900 text-white",
+  scanner_food: "bg-amber-50 text-amber-700",
+};
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -21,95 +60,77 @@ export default function Navbar() {
   const { user, signOut } = useAuth();
 
   useEffect(() => {
-    const onScroll = () => {
-      setScrolled(window.scrollY > 12);
-    };
+    const onScroll = () => setScrolled(window.scrollY > 12);
     onScroll();
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const navItems = user ? NAV_BY_ROLE[user.role] : NAV_BY_ROLE["guest"];
+
+  const NavLinks = ({ onClick }: { onClick?: () => void }) => (
+    <>
+      {navItems.map((item) => {
+        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onClick}
+            className={`rounded-full px-3 py-1 text-[0.85rem] transition-colors ${active ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </>
+  );
+
   return (
-    <header className="sticky top-0 z-40 bg-white backdrop-blur">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-100">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3 md:px-8">
+        {/* Logo */}
         <Link
           href="/"
           className="flex items-center gap-2 transition-transform"
-          style={{
-            transform: scrolled ? "scale(0.95)" : "scale(1)",
-          }}
+          style={{ transform: scrolled ? "scale(0.95)" : "scale(1)" }}
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-lg font-semibold text-white shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-lg font-bold text-white shadow-sm">
             HS
           </div>
           <div className="flex flex-col">
-            <span className="text-[1.05rem] font-semibold tracking-tight text-black">
-              HackSphere
-            </span>
-            <span className="text-[0.7rem] font-medium text-slate-500">
-              Smart hackathon OS
-            </span>
+            <span className="text-[1rem] font-semibold tracking-tight text-black">HackSphere</span>
+            <span className="text-[0.65rem] font-medium text-slate-500">Smart hackathon OS</span>
           </div>
         </Link>
 
-        {/* Desktop pill navbar */}
-        <div
-          className={`hidden max-w-full items-center justify-between rounded-full border border-slate-200 bg-white/90 px-4 text-[0.95rem] text-slate-600 shadow-sm transition-all md:flex ${
-            scrolled ? "py-1" : "py-2"
-          }`}
-          style={{
-            transform: scrolled ? "scale(0.97)" : "scale(1)",
-          }}
-        >
-          <nav className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
-            {navItems.map((item) => {
-              const active =
-                item.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`rounded-full px-3 py-1 transition-colors ${
-                    active
-                      ? "bg-blue-600 text-white"
-                      : "hover:bg-slate-100 hover:text-slate-900"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+        {/* Desktop nav */}
+        <div className="hidden items-center gap-1 rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 shadow-sm md:flex">
+          <nav className="flex items-center gap-1">
+            <NavLinks />
           </nav>
-          <div className="ml-3 flex items-center gap-2 pl-3 border-l border-slate-200">
+          <div className="ml-3 flex items-center gap-2 border-l border-slate-200 pl-3">
             {user ? (
               <>
-                <span className="hidden text-xs text-slate-500 md:inline">
-                  Hi, <span className="font-semibold text-slate-800">{user.name}</span>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${ROLE_COLORS[user.role]}`}>
+                  {ROLE_LABELS[user.role]}
+                </span>
+                <span className="hidden text-xs text-slate-700 md:inline">
+                  Hi, <span className="font-semibold text-slate-900">{user.name}</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => signOut()}
-                  className="rounded-full px-3 py-1 text-[0.8rem] font-medium hover:bg-slate-100"
+                  className="rounded-full px-3 py-1 text-[0.78rem] font-medium text-slate-600 hover:bg-slate-100"
                 >
                   Sign out
                 </button>
               </>
             ) : (
               <>
-                <Link
-                  href="/signin"
-                  className="rounded-full px-3 py-1 text-[0.8rem] font-medium hover:bg-slate-100"
-                >
-                  Sign in
-                </Link>
-                <Link
-                  href="/hackathons/create"
-                  className="rounded-full bg-blue-600 px-3 py-1 text-[0.8rem] font-semibold text-white shadow-sm hover:bg-blue-700"
-                >
-                  Create
-                </Link>
+                <Link href="/signin" className="rounded-full px-3 py-1 text-[0.78rem] font-medium text-slate-700 hover:bg-slate-100">Sign in</Link>
+                <Link href="/signup" className="rounded-full bg-blue-600 px-3 py-1 text-[0.78rem] font-semibold text-white shadow-sm hover:bg-blue-700">Sign up</Link>
               </>
             )}
           </div>
@@ -119,84 +140,42 @@ export default function Navbar() {
         <button
           type="button"
           className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700 shadow-sm md:hidden"
-          onClick={() => setOpen((prev) => !prev)}
-          aria-label="Toggle navigation menu"
+          onClick={() => setOpen((p) => !p)}
+          aria-label="Toggle navigation"
         >
           <span className="mr-1 text-xs">{open ? "Close" : "Menu"}</span>
           <span className="flex flex-col gap-[3px]">
-            <span
-              className={`h-[2px] w-4 rounded bg-slate-800 transition-transform ${
-                open ? "translate-y-[3px] rotate-45" : ""
-              }`}
-            />
-            <span
-              className={`h-[2px] w-4 rounded bg-slate-800 transition-opacity ${
-                open ? "opacity-0" : "opacity-100"
-              }`}
-            />
-            <span
-              className={`h-[2px] w-4 rounded bg-slate-800 transition-transform ${
-                open ? "-translate-y-[3px] -rotate-45" : ""
-              }`}
-            />
+            {[
+              open ? "translate-y-[3px] rotate-45" : "",
+              open ? "opacity-0" : "opacity-100",
+              open ? "-translate-y-[3px] -rotate-45" : "",
+            ].map((cls, i) => (
+              <span key={i} className={`h-[2px] w-4 rounded bg-slate-800 transition-transform ${cls}`} />
+            ))}
           </span>
         </button>
       </div>
 
-      {/* Mobile dropdown panel */}
+      {/* Mobile dropdown */}
       {open && (
-        <div className="mx-auto mt-1 w-full max-w-6xl px-5 pb-3 md:hidden">
-          <div className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-md">
-            <nav className="flex flex-col gap-1">
-              {navItems.map((item) => {
-                const active =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={`rounded-xl px-3 py-2 ${
-                      active
-                        ? "bg-blue-600 text-white"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
+        <div className="mx-auto w-full max-w-6xl px-5 pb-3 md:hidden">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-md">
+            <nav className="flex flex-col gap-1 text-sm">
+              <NavLinks onClick={() => setOpen(false)} />
             </nav>
             <div className="mt-2 flex gap-2">
               {user ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    signOut();
-                    setOpen(false);
-                  }}
+                  onClick={() => { signOut(); setOpen(false); }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-center text-xs font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Sign out
                 </button>
               ) : (
                 <>
-                  <Link
-                    href="/signin"
-                    onClick={() => setOpen(false)}
-                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-center text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    href="/hackathons/create"
-                    onClick={() => setOpen(false)}
-                    className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-center text-xs font-semibold text-white hover:bg-blue-700"
-                  >
-                    Create
-                  </Link>
+                  <Link href="/signin" onClick={() => setOpen(false)} className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-center text-xs font-medium text-slate-700 hover:bg-slate-50">Sign in</Link>
+                  <Link href="/signup" onClick={() => setOpen(false)} className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-center text-xs font-semibold text-white hover:bg-blue-700">Sign up</Link>
                 </>
               )}
             </div>
@@ -206,4 +185,3 @@ export default function Navbar() {
     </header>
   );
 }
-

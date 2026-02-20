@@ -1,139 +1,173 @@
-const meals = [
-  { type: "Breakfast", status: "Used", window: "8:00 – 9:30 AM", tone: "emerald" },
-  { type: "Lunch", status: "Pending", window: "1:00 – 2:30 PM", tone: "amber" },
-  { type: "Dinner", status: "Upcoming", window: "7:30 – 9:00 PM", tone: "slate" },
-] as const;
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAuth } from "../../AuthContext";
+import { generateQRToken, Store } from "../../lib/store";
+import QRDisplay from "../../components/QRDisplay";
+import StatusBadge from "../../components/StatusBadge";
+import type { MealType } from "../../lib/types";
+
+const MEALS: { type: MealType; label: string; window: string; emoji: string }[] = [
+  { type: "Breakfast", label: "Breakfast", window: "7:00 AM – 9:00 AM", emoji: "🍳" },
+  { type: "Lunch", label: "Lunch", window: "12:30 PM – 2:00 PM", emoji: "🍱" },
+  { type: "Dinner", label: "Dinner", window: "7:30 PM – 9:00 PM", emoji: "🍛" },
+];
+
+type MealControlStatus = "closed" | "open" | "done";
 
 export default function StudentPassPage() {
+  const { user } = useAuth();
+  const [mealControl, setMealControl] = useState<Record<MealType, MealControlStatus>>({
+    Breakfast: "closed",
+    Lunch: "closed",
+    Dinner: "closed",
+  });
+
+  // Poll meal control state every 5 seconds so student sees real-time updates when organizer opens a meal
+  useEffect(() => {
+    const refresh = () => {
+      const ctrl = Store.getMealControl();
+      setMealControl(ctrl);
+    };
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const initialSeed = Math.floor(Date.now() / 30000);
+  const gateToken = user ? generateQRToken("GATE", user.id, initialSeed) : "";
+
+  const mealToken = (type: MealType, seed: number) =>
+    user ? generateQRToken(`MEAL-${type.toUpperCase()}`, user.id, seed) : "";
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-lg px-5 py-16 text-center text-slate-500">
+        <p className="text-2xl mb-2">🔒</p>
+        <p className="font-medium">Sign in to view your QR passes.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-5xl px-5 pb-16 pt-8 md:px-8">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-            My QR passes
-          </h1>
-          <p className="mt-2 text-base text-slate-500">
-            Use these codes at the college gate and food counters. Each QR is
-            tied to your verified student profile and is impossible to reuse.
-          </p>
-        </div>
-        <span className="rounded-full bg-blue-50 px-5 py-2 text-sm font-semibold text-blue-700">
-          CampusHack 2026 · Offline
-        </span>
+    <div className="mx-auto max-w-6xl px-5 pb-16 pt-8 md:px-8">
+      <header className="mb-6">
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">My QR passes</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Gate QR refreshes every 30 seconds · Meal QRs are released by the organizer in order: Breakfast → Lunch → Dinner
+        </p>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        {/* Entry QR */}
-        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
-          <div className="mb-3 flex items-center justify-between">
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* ── Gate pass ── */}
+        <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-lg">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                Gate entry pass
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Show this at the campus gate to enter the hackathon venue.
-                Dynamic, rotating QR linked to your verification status.
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Gate entry pass</p>
+              <h2 className="mt-1 text-lg font-semibold">{user.name}</h2>
+              <p className="text-xs text-slate-400">{user.email}</p>
             </div>
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
-              Verified · Ready to scan
-            </span>
+            <StatusBadge label="Verified ✓" tone="emerald" dot />
+          </div>
+          <div className="flex justify-center">
+            <QRDisplay
+              token={gateToken}
+              label="Gate Entry"
+              refreshSeconds={30}
+              size={180}
+              generateToken={(seed) => generateQRToken("GATE", user.id, seed)}
+            />
+          </div>
+          <p className="mt-3 text-center text-[11px] text-slate-500">
+            Unique per-student · Dynamic refresh · Prevents duplicate entry
+          </p>
+        </div>
+
+        {/* ── Meal passes ── */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-sm font-semibold text-slate-800">Meal passes</h2>
+            <p className="text-[11px] text-slate-500">Released by organizer · Auto-refreshes every 5s</p>
           </div>
 
-          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex flex-1 items-center justify-center rounded-2xl bg-slate-900 p-6">
-              <div className="h-40 w-40 rounded-lg bg-[repeating-linear-gradient(45deg,_#0f172a,_#0f172a_6px,_#1e293b_6px,_#1e293b_12px)]" />
-            </div>
-            <div className="flex-1 space-y-3 text-sm text-slate-600">
-              <p className="font-mono text-xs text-slate-900">
-                HACK-ENTRY-7F3B9Q
-              </p>
-              <p>
-                Expires in{" "}
-                <span className="font-semibold text-emerald-600">01:57</span>.
-                A new QR will be generated automatically after expiry.
-              </p>
-              <p className="text-xs text-slate-500">
-                Duplicate scans are blocked. Attendance is logged in real-time
-                for organizers.
-              </p>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full bg-slate-100 px-2 py-1">
-                  Sent to email
-                </span>
-                <span className="rounded-full bg-slate-100 px-2 py-1">
-                  Available in app
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
+          {MEALS.map((meal, i) => {
+            const status: MealControlStatus = mealControl[meal.type];
+            const seed = Math.floor(Date.now() / 30000) + i;
 
-        {/* Meal QRs */}
-        <section className="space-y-4">
-          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
-            <h2 className="text-base font-semibold text-slate-900">
-              Meal passes
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Three one-time-use QRs for breakfast, lunch, and dinner. Each QR
-              works only once within its time window.
-            </p>
-            <ul className="mt-3 space-y-2 text-sm">
-              {meals.map((meal) => (
-                <li
-                  key={meal.type}
-                  className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"
-                >
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {meal.type}
-                    </p>
-                    <p className="text-slate-800">{meal.window}</p>
+            return (
+              <div
+                key={meal.type}
+                className={`rounded-2xl p-4 shadow-sm ring-1 transition-all duration-300 ${status === "open"
+                    ? "bg-white ring-emerald-300 shadow-emerald-50"
+                    : status === "done"
+                      ? "bg-slate-50 ring-slate-200 opacity-60"
+                      : "bg-slate-50 ring-slate-100 opacity-50"
+                  }`}
+              >
+                {/* Header row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-2xl transition-all ${status === "closed" ? "grayscale opacity-50" : ""}`}>
+                      {meal.emoji}
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">{meal.label}</h3>
+                      <p className="text-[11px] text-slate-500">{meal.window}</p>
+                    </div>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      meal.tone === "emerald"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : meal.tone === "amber"
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-slate-100 text-slate-700"
-                    }`}
-                  >
-                    {meal.status}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 text-xs text-slate-500">
-              Once a QR is scanned successfully, it becomes invalid and cannot
-              be reused or forwarded to someone else.
-            </p>
-          </div>
+                  <StatusBadge
+                    label={status === "open" ? "🟢 Active" : status === "done" ? "✓ Redeemed" : "⏳ Not yet open"}
+                    tone={status === "open" ? "emerald" : status === "done" ? "default" : "default"}
+                    dot
+                  />
+                </div>
 
-          <div className="rounded-2xl bg-slate-900 p-4 text-xs text-slate-100 shadow-sm">
-            <h3 className="text-sm font-semibold text-white">
-              Scanner view (food counter)
-            </h3>
-            <p className="mt-2">
-              Volunteers see a simple &quot;Scan / Valid / Already used&quot;
-              interface optimized for low-end phones and campus WiFi.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-              <span className="rounded-full bg-emerald-500/20 px-2 py-1 text-emerald-200">
-                Valid · Breakfast
-              </span>
-              <span className="rounded-full bg-rose-500/20 px-2 py-1 text-rose-100">
-                Duplicate · Blocked
-              </span>
-              <span className="rounded-full bg-amber-500/20 px-2 py-1 text-amber-100">
-                Outside time window
-              </span>
-            </div>
-          </div>
-        </section>
+                {/* QR — only shown when organizer has opened this meal */}
+                {status === "open" && (
+                  <div className="mt-4 flex justify-center">
+                    <QRDisplay
+                      token={mealToken(meal.type, seed)}
+                      label={meal.label}
+                      refreshSeconds={30}
+                      size={150}
+                      generateToken={(newSeed) => mealToken(meal.type, newSeed)}
+                    />
+                  </div>
+                )}
+
+                {status === "done" && (
+                  <p className="mt-2 text-center text-[11px] text-slate-400">
+                    ✓ Meal window closed — QR no longer valid
+                  </p>
+                )}
+
+                {status === "closed" && (
+                  <p className="mt-2 text-center text-[11px] text-slate-400">
+                    Waiting for organizer to open this meal window…
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
+
+      <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-xs text-slate-500">
+        <h3 className="font-semibold text-slate-700 mb-1">How meal QRs work</h3>
+        <ol className="space-y-0.5 list-decimal list-inside">
+          <li>Organizer opens the Breakfast window from their dashboard → all students see a live Breakfast QR</li>
+          <li>Scanner scans your QR at the food counter — it becomes invalid immediately after</li>
+          <li>Organizer closes Breakfast and opens Lunch→ only the Lunch QR appears (Breakfast locked)</li>
+          <li>Same for Dinner — sequentially controlled, no gaming or replays possible</li>
+        </ol>
+      </div>
+
+      <button
+        onClick={() => window.print()}
+        className="mt-4 rounded-full border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      >
+        🖨️ Save / print passes
+      </button>
     </div>
   );
 }
-

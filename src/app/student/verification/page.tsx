@@ -5,15 +5,16 @@ import { useAuth } from "../../AuthContext";
 import { Store } from "../../lib/store";
 import type { Student } from "../../lib/types";
 import StatusBadge from "../../components/StatusBadge";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
 import PhoneOTPVerify from "../../components/PhoneOTPVerify";
+import FaceVerification from "../../components/FaceVerification";
 
 type Step = "collegeId" | "aadhaar" | "selfie" | "phone" | "review";
 const STEPS: { key: Step; label: string }[] = [
   { key: "collegeId", label: "College ID" },
   { key: "aadhaar", label: "Masked Aadhaar" },
-  { key: "selfie", label: "Live selfie" },
+  { key: "selfie", label: "Face Verify" },
   { key: "phone", label: "Phone OTP" },
   { key: "review", label: "Admin review" },
 ];
@@ -26,6 +27,7 @@ export default function StudentVerificationPage() {
 
   const [student, setStudent] = useState<Student | null>(null);
   const [collegeIdName, setCollegeIdName] = useState("");
+  const [collegeIdPreview, setCollegeIdPreview] = useState<string | null>(null);
   const [selfieFile, setSelfieFile] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
 
@@ -38,6 +40,12 @@ export default function StudentVerificationPage() {
   // Phone OTP state
   const [phoneVerified, setPhoneVerified] = useState(false);
 
+  // Face embedding state
+  const [faceEmbedding, setFaceEmbedding] = useState<number[] | null>(null);
+  const [enrollingFace, setEnrollingFace] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
+  const [showFaceVerification, setShowFaceVerification] = useState(false);
+
   const [currentStep, setCurrentStep] = useState<Step>("collegeId");
 
   useEffect(() => {
@@ -47,6 +55,8 @@ export default function StudentVerificationPage() {
       setStudent(s);
       if (s.collegeId) setCollegeIdName(s.collegeId);
       if (s.aadhaarMasked) { setAadhaarDone(true); setAadhaarInput("************"); }
+      if (s.faceEmbedding) setFaceEmbedding(s.faceEmbedding);
+      if (s.selfie) setSelfieFile(s.selfie);
     }
   }, [user]);
 
@@ -58,12 +68,58 @@ export default function StudentVerificationPage() {
     setStudent(updated);
   };
 
-  const handleIdUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  /* ── Step 1: College ID upload → extract face embedding ────────────────── */
+
+  const handleIdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setCollegeIdName(f.name);
-    save({ collegeId: f.name });
-    setCurrentStep("aadhaar");
+    setEnrollError("");
+
+    // Read image as base64
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      setCollegeIdPreview(dataUrl);
+      save({ collegeId: f.name });
+
+      // Attempt to extract face embedding from the ID card
+      setEnrollingFace(true);
+      try {
+        const res = await fetch("/api/face-enroll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: dataUrl }),
+        });
+        const data = await res.json();
+
+        if (data.success && data.embedding) {
+          setFaceEmbedding(data.embedding);
+          save({
+            collegeId: f.name,
+            faceEmbedding: data.embedding,
+          });
+
+          // Also save to Firestore
+          if (user) {
+            try {
+              await setDoc(doc(db, "users", user.uid), {
+                faceEmbedding: data.embedding,
+              }, { merge: true });
+            } catch (fsErr) {
+              console.warn("Could not save embedding to Firestore:", fsErr);
+            }
+          }
+        } else {
+          setEnrollError(data.error || "Could not extract face from ID card. Continuing without AI face matching.");
+        }
+      } catch {
+        setEnrollError("Face service unavailable. Continuing with client-side matching.");
+      }
+      setEnrollingFace(false);
+      setCurrentStep("aadhaar");
+    };
+    reader.readAsDataURL(f);
   };
 
   // ── Aadhaar text input ───────────────────────────────────────────────────
@@ -82,9 +138,8 @@ export default function StudentVerificationPage() {
     setAadhaarSaving(true);
     setAadhaarError("");
     try {
-      // Save ONLY the last 4 digits to Firestore
       const last4 = aadhaarInput.slice(8);
-      await updateDoc(doc(db, "users", user.uid), { aadhaarLast4: last4 });
+      await setDoc(doc(db, "users", user.uid), { aadhaarLast4: last4 }, { merge: true });
       save({ aadhaarMasked: `XXXX-XXXX-${last4}` });
       setAadhaarDone(true);
       setCurrentStep("selfie");
@@ -108,6 +163,8 @@ export default function StudentVerificationPage() {
     return "XXXX XXXX " + digits.slice(8);
   };
 
+  /* ── Step 3: Selfie / Face Verification ────────────────────────────────── */
+
   const streamRef = useRef<MediaStream | null>(null);
 
   const openCamera = async () => {
@@ -118,7 +175,6 @@ export default function StudentVerificationPage() {
     } catch { alert("Camera not available. Please upload a photo instead."); }
   };
 
-  // Attach stream to video element AFTER it renders
   useEffect(() => {
     if (cameraOpen && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
@@ -154,6 +210,29 @@ export default function StudentVerificationPage() {
     reader.readAsDataURL(f);
   };
 
+  const handleFaceVerificationResult = (result: { verified: boolean; score: number; livenessPassed?: boolean }) => {
+    save({
+      selfie: "face-verified",
+      faceMatchScore: result.score,
+      faceVerified: result.verified,
+      livenessPassed: result.livenessPassed ?? false,
+      faceConfidence: result.score,
+    });
+    setSelfieFile("face-verified");
+    setShowFaceVerification(false);
+
+    // Save to Firestore
+    if (user) {
+      setDoc(doc(db, "users", user.uid), {
+        faceVerified: result.verified,
+        faceConfidence: result.score,
+        livenessPassed: result.livenessPassed ?? false,
+      }, { merge: true }).catch(console.warn);
+    }
+
+    setCurrentStep("phone");
+  };
+
   const stepDone: Record<Step, boolean> = {
     collegeId: !!collegeIdName,
     aadhaar: aadhaarDone,
@@ -169,7 +248,7 @@ export default function StudentVerificationPage() {
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Student verification</h1>
-          <p className="mt-1 text-sm text-slate-500">One-time college-grade KYC. Once approved, your profile unlocks all hackathon features.</p>
+          <p className="mt-1 text-sm text-slate-500">One-time college-grade KYC with AI face recognition. Once approved, your profile unlocks all hackathon features.</p>
         </div>
         <StatusBadge
           label={student?.verificationStatus === "approved" ? "Verified ✓" : allDone ? "Pending review" : "In progress"}
@@ -198,7 +277,7 @@ export default function StudentVerificationPage() {
         <section className="space-y-4">
           {/* Step 1 – College ID */}
           <VerCard title="1. Upload college ID card" status={stepDone.collegeId ? "complete" : "pending"}
-            description="Upload a clear photo or scan of your official college ID card.">
+            description="Upload a clear photo of your official college ID. We extract a face embedding for AI verification.">
             <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-300 px-4 py-3 hover:bg-slate-50">
               <span className="text-lg">📎</span>
               <div>
@@ -207,13 +286,38 @@ export default function StudentVerificationPage() {
               </div>
               <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleIdUpload} />
             </label>
+
+            {/* College ID preview */}
+            {collegeIdPreview && (
+              <div className="mt-2 flex items-start gap-3">
+                <img src={collegeIdPreview} alt="College ID" className="h-20 w-28 rounded-lg object-cover ring-1 ring-slate-200" />
+                <div className="text-xs text-slate-600 space-y-1">
+                  {enrollingFace && (
+                    <p className="flex items-center gap-1.5 text-blue-600 font-medium">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
+                      Extracting face embedding…
+                    </p>
+                  )}
+                  {faceEmbedding && (
+                    <p className="flex items-center gap-1 text-emerald-700 font-semibold">
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                      </svg>
+                      128D face embedding extracted ✓
+                    </p>
+                  )}
+                  {enrollError && (
+                    <p className="text-amber-700 font-medium">⚠ {enrollError}</p>
+                  )}
+                </div>
+              </div>
+            )}
           </VerCard>
 
           {/* Step 2 – Aadhaar Number */}
           <VerCard title="2. Aadhaar Number" status={stepDone.aadhaar ? "complete" : stepDone.collegeId ? "pending" : "locked"}
             description="Enter your 12-digit Aadhaar number. We only store the last 4 digits.">
             <div className="mt-3 space-y-3">
-              {/* Input + Save */}
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
                   Aadhaar Number <span className="font-normal text-slate-400">(12 digits)</span>
@@ -248,7 +352,6 @@ export default function StudentVerificationPage() {
                 </div>
               </div>
 
-              {/* Masked display */}
               {aadhaarInput.length >= 4 && (
                 <div className="flex items-center gap-2">
                   <span className="rounded-lg bg-slate-100 px-3 py-1.5 font-mono text-xs font-semibold text-slate-700 tracking-wider">
@@ -265,7 +368,6 @@ export default function StudentVerificationPage() {
                 </div>
               )}
 
-              {/* Privacy banner */}
               <div className="flex items-start gap-2.5 rounded-xl bg-emerald-50 px-3.5 py-2.5 ring-1 ring-emerald-200">
                 <svg className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
@@ -275,17 +377,90 @@ export default function StudentVerificationPage() {
                 </p>
               </div>
 
-              {/* Error */}
               {aadhaarError && (
                 <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{aadhaarError}</p>
               )}
             </div>
           </VerCard>
 
-          {/* Step 3 – Selfie */}
-          <VerCard title="3. Live selfie" status={stepDone.selfie ? "complete" : stepDone.aadhaar ? "pending" : "locked"}
-            description="Capture a selfie. We match it against your college ID photo.">
-            <div className="mt-3 space-y-2">
+          {/* Step 3 – Face Verification (AI-powered) */}
+          <VerCard title="3. AI Face Verification" status={stepDone.selfie ? "complete" : stepDone.aadhaar ? "pending" : "locked"}
+            description="Live face verification with liveness detection. We match your live face against your college ID using 128D face embeddings.">
+            <div className="mt-3 space-y-3">
+              {/* Show FaceVerification component */}
+              {showFaceVerification && stepDone.aadhaar && (
+                <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                  <FaceVerification
+                    studentName={student?.name ?? user?.name ?? "Student"}
+                    studentPhotoUrl={collegeIdPreview ?? undefined}
+                    storedEmbedding={faceEmbedding ?? undefined}
+                    onResult={handleFaceVerificationResult}
+                    onCancel={() => setShowFaceVerification(false)}
+                  />
+                </div>
+              )}
+
+              {/* Face verification result display */}
+              {student?.faceVerified !== undefined && selfieFile && !showFaceVerification && (
+                <div className={`rounded-xl p-3 ${student.faceVerified ? "bg-emerald-50 ring-1 ring-emerald-200" : "bg-rose-50 ring-1 ring-rose-200"}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{student.faceVerified ? "✅" : "❌"}</span>
+                      <div>
+                        <p className={`text-xs font-bold ${student.faceVerified ? "text-emerald-800" : "text-rose-800"}`}>
+                          {student.faceVerified ? "Face Verified" : "Face Mismatch"}
+                        </p>
+                        <p className={`text-[10px] ${student.faceVerified ? "text-emerald-600" : "text-rose-600"}`}>
+                          Confidence: <span className="font-mono font-bold">{student.faceConfidence ?? student.faceMatchScore}%</span>
+                          {student.livenessPassed && " · Liveness: ✓"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowFaceVerification(true)}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    >
+                      Re-verify
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Buttons to start verification or use alternatives */}
+              {!showFaceVerification && !selfieFile && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setShowFaceVerification(true)}
+                    disabled={!stepDone.aadhaar}
+                    className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all flex items-center justify-center gap-2"
+                  >
+                    🧠 Start AI Face Verification
+                    {faceEmbedding && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">128D</span>}
+                  </button>
+
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                    <span className="flex-1 h-px bg-slate-200" />
+                    <span>OR use alternative methods</span>
+                    <span className="flex-1 h-px bg-slate-200" />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={openCamera}
+                      disabled={!stepDone.aadhaar}
+                      className="flex-1 rounded-xl border border-dashed border-slate-300 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                    >
+                      📷 Simple selfie
+                    </button>
+                    <label className="flex-1 flex cursor-pointer items-center justify-center gap-1 rounded-xl border border-dashed border-slate-300 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      <input type="file" accept="image/*" className="hidden" onChange={handleSelfieUpload} disabled={!stepDone.aadhaar} />
+                      📁 Upload photo
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy camera view */}
               {cameraOpen && (
                 <div className="space-y-2">
                   <video
@@ -296,28 +471,17 @@ export default function StudentVerificationPage() {
                     className="w-full rounded-xl bg-slate-900"
                     style={{ height: 220, objectFit: "cover", transform: "scaleX(-1)" }}
                   />
-                  <button onClick={captureSelfie} className="w-full rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black">
+                  <button onClick={captureSelfie} className="w-full rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black cursor-pointer">
                     📸 Capture selfie
                   </button>
                 </div>
               )}
-              {selfieFile && !cameraOpen && (
+
+              {selfieFile && !cameraOpen && !showFaceVerification && !student?.faceVerified && (
                 <img src={selfieFile} alt="selfie" className="h-28 w-28 rounded-xl object-cover ring-2 ring-emerald-300" />
               )}
-              {!cameraOpen && !selfieFile && (
-                <button
-                  onClick={openCamera}
-                  disabled={!stepDone.aadhaar}
-                  className="w-full rounded-xl border border-dashed border-slate-300 py-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  📷 Open camera
-                </button>
-              )}
-              <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-500 hover:text-slate-700">
-                <input type="file" accept="image/*" className="hidden" onChange={handleSelfieUpload} disabled={!stepDone.aadhaar} />
-                <span className="underline">Or upload a photo instead</span>
-              </label>
-              {student?.faceMatchScore && (
+
+              {student?.faceMatchScore && !student?.faceVerified && (
                 <p className="text-xs font-medium text-emerald-700">Face match score: <strong>{student.faceMatchScore}%</strong> · Good ✓</p>
               )}
             </div>
@@ -344,9 +508,29 @@ export default function StudentVerificationPage() {
                   <p className="font-semibold text-slate-900">{user?.name ?? "You"}</p>
                   <StatusBadge label={student?.verificationStatus === "approved" ? "Approved" : "Awaiting review"} tone={student?.verificationStatus === "approved" ? "emerald" : "amber"} dot />
                 </div>
-                {student?.faceMatchScore && <p className="mt-1">Face match: <strong className="text-emerald-700">{student.faceMatchScore}%</strong></p>}
+                {student?.faceMatchScore && (
+                  <p className="mt-1">
+                    Face match: <strong className="text-emerald-700">{student.faceMatchScore}%</strong>
+                    {student.faceVerified && <span className="ml-1 text-emerald-600 font-semibold">· AI Verified ✓</span>}
+                    {student.livenessPassed && <span className="ml-1 text-blue-600 font-semibold">· Liveness ✓</span>}
+                  </p>
+                )}
                 <p>Aadhaar: <span className="font-mono">XXXX-XXXX-****</span> <span className="text-emerald-700 font-semibold">· Auto-masked ✓</span></p>
                 <p>Phone: <span className={phoneVerified ? "font-semibold text-emerald-700" : "text-amber-700"}>{phoneVerified ? "Verified" : "Pending"}</span></p>
+                {faceEmbedding && (
+                  <p className="mt-1 text-[10px] text-slate-400">Face embedding: 128D vector stored in Firestore</p>
+                )}
+
+                {student?.verificationStatus === "approved" && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex justify-center">
+                    <a
+                      href="/hackathons"
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <span>🔍 Search for the hackathons to register</span>
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </VerCard>
@@ -354,25 +538,105 @@ export default function StudentVerificationPage() {
 
         {/* Sidebar */}
         <aside className="space-y-4">
-          <section className="rounded-2xl bg-slate-900 px-5 py-5 text-sm text-slate-100 shadow-sm">
-            <h2 className="text-base font-semibold text-white">Data protection</h2>
-            <ul className="mt-3 space-y-1.5 text-xs text-slate-300">
-              <li>• Aadhaar first 8 digits are auto-masked on your device</li>
-              <li>• Only the masked image is uploaded — original never leaves your browser</li>
-              <li>• All uploads are encrypted in transit (HTTPS)</li>
-              <li>• Only authorized college admins can view data</li>
-              <li>• You can request deletion after the event</li>
+
+          {/* 1 — Progress tracker */}
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+            <h2 className="font-semibold text-slate-900">Progress</h2>
+            <div className="mt-3 mb-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-500"
+                style={{ width: `${(STEPS.filter((s) => stepDone[s.key]).length / STEPS.length) * 100}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 mb-3">{STEPS.filter((s) => stepDone[s.key]).length} of {STEPS.length} steps complete</p>
+            {STEPS.map((s) => (
+              <div key={s.key} className="mt-2 flex items-center justify-between text-xs">
+                <span className={`flex items-center gap-1.5 ${s.key === currentStep ? "text-slate-900 font-semibold" : "text-slate-500"}`}>
+                  <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold ${stepDone[s.key] ? "bg-emerald-500 text-white" : s.key === currentStep ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-400"}`}>
+                    {stepDone[s.key] ? "✓" : ""}
+                  </span>
+                  {s.label}
+                </span>
+                <StatusBadge label={stepDone[s.key] ? "Done" : s.key === currentStep ? "Current" : "Pending"} tone={stepDone[s.key] ? "emerald" : s.key === currentStep ? "blue" : "default"} />
+              </div>
+            ))}
+          </section>
+
+
+          {/* 3 — Contextual tips based on current step */}
+          <section className="rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 p-5 shadow-sm ring-1 ring-amber-100">
+            <h2 className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
+              <svg className="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+              </svg>
+              Tips
+            </h2>
+            <ul className="mt-3 space-y-2 text-xs text-amber-800">
+              {currentStep === "collegeId" && (
+                <>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Use a clear, well-lit photo of your college ID</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Make sure your face is clearly visible on the ID card</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Avoid glare or shadows covering the photo area</li>
+                </>
+              )}
+              {currentStep === "aadhaar" && (
+                <>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Only the last 4 digits are saved — your full number stays private</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Double-check before submitting — editing resets the saved value</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Your Aadhaar is used solely for identity verification</li>
+                </>
+              )}
+              {currentStep === "selfie" && (
+                <>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> <strong>Blink naturally</strong> when prompted — this proves you&apos;re not a photo</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> <strong>Move your head slightly</strong> left or right when asked</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Use good lighting — avoid backlighting or dark rooms</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Remove sunglasses, hats, or anything covering your face</li>
+                </>
+              )}
+              {currentStep === "phone" && (
+                <>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Enter your personal mobile number (not a landline)</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> OTP expires in 5 minutes — request a new one if needed</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> This number will be used for event-day communication</li>
+                </>
+              )}
+              {currentStep === "review" && (
+                <>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> All steps done! Your profile is now under admin review</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> Approval usually happens within 24 hours</li>
+                  <li className="flex items-start gap-2"><span className="mt-0.5 text-amber-500">▸</span> You&apos;ll be notified once approved</li>
+                </>
+              )}
             </ul>
           </section>
 
+          {/* 4 — What happens after verification */}
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-            <h2 className="font-semibold text-slate-900">Progress</h2>
-            {STEPS.map((s) => (
-              <div key={s.key} className="mt-2 flex items-center justify-between text-xs">
-                <span className="text-slate-600">{s.label}</span>
-                <StatusBadge label={stepDone[s.key] ? "Done" : "Pending"} tone={stepDone[s.key] ? "emerald" : "default"} />
+            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+              <svg className="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+              </svg>
+              What&apos;s Next?
+            </h2>
+            <div className="mt-3 space-y-2.5 text-xs text-slate-600">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[8px] font-bold text-blue-600">1</span>
+                <span>Once verified, browse and <strong>register for hackathons</strong></span>
               </div>
-            ))}
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[8px] font-bold text-blue-600">2</span>
+                <span>Get your <strong>QR pass</strong> — scan at entry for instant check-in</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[8px] font-bold text-blue-600">3</span>
+                <span>Form or join a <strong>team</strong> and start building</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-100 text-[8px] font-bold text-blue-600">4</span>
+                <span>Track scores and <strong>leaderboard rankings</strong> in real time</span>
+              </div>
+            </div>
           </section>
         </aside>
       </div>

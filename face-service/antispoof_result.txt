@@ -1,0 +1,41 @@
+﻿============================================================
+TEST: Static photo attack (same image 8 times)
+A real attacker would hold up a photo to the camera.
+The system should REJECT this as a spoofing attempt.
+============================================================
+
+  Liveness Passed: False
+  Spoof Score: 30/100
+  Blink Detected: False
+  Motion Detected: False
+  blinkDetection: FAIL
+    earValues: [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
+    earVariance: 0.0
+    hasClosed: False
+    hasOpen: False
+  facePresence: PASS
+    detected: 8
+    ratio: 1.0
+    total: 8
+  frequencyAnalysis: FAIL
+    avgHfRatio: 0.9022
+    detail: Moire pattern / screen artifact detection
+  headMotion: FAIL
+    maxShift: 0.0
+    threshold: 15
+  microMovement: FAIL
+    detail: Frame-to-frame pixel variance (breathing/sway detection)
+    score: 0.0
+    threshold: 1.0
+  textureAnalysis: PASS
+    avgLbpVariance: 0.0001032
+    detail: Real skin micro-texture check (LBP)
+    threshold: 0.0001
+
+  Failure Reasons:
+    X No blink or head movement detected ΓÇö possible photo attack
+    X Anti-spoof score too low (30%)
+
+  Details: Spoof score: 30/100. Faces in 8/8 frames. Blink: No. Motion: No (shift: 0.0px). Texture: Pass (LBP var: 0.00010320). Micro-movement: Fail (0.00).
+
+  ANTI-SPOOFING WORKING: Static photo correctly REJECTED!

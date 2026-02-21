@@ -1,0 +1,70 @@
+{
+  "blinkDetected": false,
+  "checks": {
+    "blinkDetection": {
+      "earValues": [
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "earVariance": 0.0,
+      "hasClosed": false,
+      "hasOpen": false,
+      "passed": false
+    },
+    "facePresence": {
+      "detected": 8,
+      "passed": true,
+      "ratio": 1.0,
+      "total": 8
+    },
+    "frequencyAnalysis": {
+      "avgHfRatio": 0.9022,
+      "detail": "Moire pattern / screen artifact detection",
+      "passed": false
+    },
+    "headMotion": {
+      "maxShift": 0.0,
+      "passed": false,
+      "threshold": 15
+    },
+    "microMovement": {
+      "detail": "Frame-to-frame pixel variance (breathing/sway detection)",
+      "passed": false,
+      "score": 0.0,
+      "threshold": 1.0
+    },
+    "textureAnalysis": {
+      "avgLbpVariance": 0.0001032,
+      "detail": "Real skin micro-texture check (LBP)",
+      "passed": true,
+      "threshold": 0.0001
+    }
+  },
+  "details": "Spoof score: 30/100. Faces in 8/8 frames. Blink: No. Motion: No (shift: 0.0px). Texture: Pass (LBP var: 0.00010320). Micro-movement: Fail (0.00).",
+  "earValues": [
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25
+  ],
+  "facesDetected": 8,
+  "failureReasons": [
+    "No blink or head movement detected \u2014 possible photo attack",
+    "Anti-spoof score too low (30%)"
+  ],
+  "livenessPassed": false,
+  "motionDetected": false,
+  "spoofScore": 30,
+  "success": true,
+  "totalFrames": 8
+}

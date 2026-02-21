@@ -357,6 +357,74 @@ export const Store = {
         const regs = this.getRegistrations().filter((id) => id !== hackathonId);
         window.localStorage.setItem("hs-registrations", JSON.stringify(regs));
     },
+
+    // ── Team registration flow helpers ───────────────────────────────────────
+    getRegistrationMode(slug: string): "solo" | "team" | null {
+        const team = this.getTeams(slug).find((t) => t.members.includes("current-user") || t.id === localStorage.getItem(`hs-reg-team-${slug}`));
+        if (!team) return null;
+        return team.name.startsWith("Solo") ? "solo" : "team";
+    },
+
+    getRegistrationTeamId(slug: string): string | null {
+        return localStorage.getItem(`hs-reg-team-${slug}`);
+    },
+
+    registerSolo(slug: string, studentId: string): Team {
+        const team: Team = {
+            id: `team-solo-${Date.now()}`,
+            hackathonId: slug,
+            name: `Solo - ${studentId}`,
+            members: [studentId],
+            problemStatement: "",
+            submissionStatus: "draft",
+            applicationComplete: false,
+            applicationSteps: { verification: true, registration: true, qr: false, final: false, ai: false },
+        };
+        this.upsertTeam(team);
+        this.registerForHackathon(slug);
+        localStorage.setItem(`hs-reg-team-${slug}`, team.id);
+        return team;
+    },
+
+    createTeam(slug: string, studentId: string, name: string): Team {
+        const team: Team = {
+            id: `team-${Date.now()}`,
+            hackathonId: slug,
+            name,
+            members: [studentId],
+            pendingInvites: [],
+            problemStatement: "",
+            submissionStatus: "draft",
+            applicationComplete: false,
+            applicationSteps: { verification: true, registration: true, qr: false, final: false, ai: false },
+        };
+        this.upsertTeam(team);
+        this.registerForHackathon(slug);
+        localStorage.setItem(`hs-reg-team-${slug}`, team.id);
+        return team;
+    },
+
+    inviteMember(teamId: string, emailOrId: string): void {
+        const team = this.getTeam(teamId);
+        if (team) {
+            if (!team.pendingInvites) team.pendingInvites = [];
+            if (!team.pendingInvites.includes(emailOrId)) {
+                team.pendingInvites.push(emailOrId);
+                this.upsertTeam(team);
+            }
+        }
+    },
+
+    selectProblemStatement(teamId: string, psId: string): void {
+        const team = this.getTeam(teamId);
+        if (team) {
+            team.selectedProblemStatementId = psId;
+            const hack = this.getHackathon(team.hackathonId);
+            const ps = hack?.problemStatementEntries?.find(p => p.id === psId);
+            if (ps) team.problemStatement = ps.title;
+            this.upsertTeam(team);
+        }
+    },
 };
 
 // ─── Weighted score calculator ────────────────────────────────────────────────

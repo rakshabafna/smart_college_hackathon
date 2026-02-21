@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, use } from "react";
+import { useAuth } from "../../AuthContext";
 import { Store } from "../../lib/store";
 import type { Hackathon, Team } from "../../lib/types";
 import ProgressBar from "../../components/ProgressBar";
@@ -35,6 +36,8 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
   const [submitted, setSubmitted] = useState(false);
   const [registered, setRegistered] = useState(false);
 
+  const { user } = useAuth();
+
   useEffect(() => {
     setHackathon(Store.getHackathon(slug) ?? null);
     setTeams(Store.getTeams(slug));
@@ -62,6 +65,17 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
 
   const handleRegister = () => {
     if (registered) return;
+
+    if (!user) {
+      alert("Please sign in to register for this hackathon.");
+      return;
+    }
+
+    if (user.role === "student" && user.status !== "verified") {
+      alert("Verification required: Please complete your student verification and wait for admin approval before registering.");
+      return;
+    }
+
     Store.registerForHackathon(hackathon?.id ?? slug);
     setRegistered(true);
     // Refresh hackathon to show updated applicant count
@@ -463,12 +477,22 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
                 <span className="text-sm font-bold text-emerald-700">Registered Successfully</span>
               </div>
             ) : (
-              <button
-                onClick={handleRegister}
-                className="mt-4 w-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
-              >
-                🚀 Register Now
-              </button>
+              <div className="mt-4 space-y-2">
+                {user && user.role === "student" && user.status !== "verified" && (
+                  <p className="text-[10px] text-amber-600 font-medium bg-amber-50 rounded-lg p-2 ring-1 ring-amber-100 italic">
+                    ⚠️ Verification required to register. <Link href="/student/verification" className="underline font-bold">Verify now →</Link>
+                  </p>
+                )}
+                <button
+                  onClick={handleRegister}
+                  className={`w-full rounded-full px-4 py-3 text-sm font-bold text-white shadow-md transition-all ${user && user.role === "student" && user.status !== "verified"
+                      ? "bg-slate-400 cursor-not-allowed"
+                      : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                    }`}
+                >
+                  🚀 Register Now
+                </button>
+              </div>
             )}
 
             {/* Social Links */}

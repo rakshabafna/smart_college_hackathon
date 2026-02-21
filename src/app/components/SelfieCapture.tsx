@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { storage, db } from "../../lib/firebase";
 
 type Phase = "idle" | "camera" | "preview" | "uploading" | "done" | "error";
@@ -113,7 +113,7 @@ export default function SelfieCapture({ uid, onCaptureComplete }: SelfieCaptureP
             clearInterval(progressTimer);
             setUploadProgress(100);
 
-            await updateDoc(doc(db, "users", uid), { selfieUrl: url });
+            await setDoc(doc(db, "users", uid), { selfieUrl: url }, { merge: true });
 
             setPhase("done");
             onCaptureComplete();
@@ -134,8 +134,8 @@ export default function SelfieCapture({ uid, onCaptureComplete }: SelfieCaptureP
 
     return (
         <div className={`rounded-xl border-2 p-4 transition-all ${phase === "done"
-                ? "border-emerald-300 bg-emerald-50/30"
-                : "border-violet-200 bg-violet-50/20"
+            ? "border-emerald-300 bg-emerald-50/30"
+            : "border-violet-200 bg-violet-50/20"
             }`}>
             {/* Header */}
             <div className="flex items-center gap-2.5 mb-3">

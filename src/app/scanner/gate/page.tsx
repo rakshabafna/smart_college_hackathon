@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Store } from "../../lib/store";
+import { Store, parseStudentIdFromToken } from "../../lib/store";
 import type { GateEntryLog, GateEntryResult, GateEntryStats } from "../../lib/types";
 import QRScannerCamera from "../../components/QRScannerCamera";
 import FaceVerification from "../../components/FaceVerification";
@@ -15,6 +15,7 @@ type ResolvedStudent = {
   id: string;
   name: string;
   email: string;
+  photoUrl?: string;
   verified: boolean;
 };
 
@@ -67,7 +68,6 @@ export default function GateEntryPage() {
 
     // Must be a GATE- prefixed code
     if (!stripped.startsWith("GATE-")) {
-      // Invalid code
       const entry: GateEntryLog = {
         id: `ge-${Date.now()}`,
         studentId: "unknown",
@@ -86,16 +86,48 @@ export default function GateEntryPage() {
       return;
     }
 
-    // Find approved students
-    const students = Store.getStudents();
-    const approved = students.filter((s) => s.verificationStatus === "approved");
+    // Parse student ID from QR code (format: GATE-{studentId}-{hash})
+    const studentId = parseStudentIdFromToken(stripped);
+    const allStudents = Store.getStudents();
+    const approved = allStudents.filter((s) => s.verificationStatus === "approved");
 
-    if (approved.length === 0) {
-      // No approved students
+    // Try direct ID lookup first, then fall back to hash-based for short codes (e.g. GATE-ABCDEF)
+    let student = studentId
+      ? allStudents.find((s) => s.id.toLowerCase() === studentId.toLowerCase())
+      : null;
+
+    if (!student && approved.length > 0) {
+      // Fallback: hash the code to pick an approved student
+      const codeHash = stripped.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+      student = approved[codeHash % approved.length];
+    }
+
+    if (!student) {
+      // No approved students at all
       const entry: GateEntryLog = {
         id: `ge-${Date.now()}`,
-        studentId: "unknown",
-        studentName: "Unknown",
+        studentId: studentId ?? "unknown",
+        studentName: "Unknown Student",
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_unknown",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_unknown");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    // Check if student is verified
+    if (student.verificationStatus !== "approved") {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: student.id,
+        studentName: student.name,
         hackathonId: hackId,
         scannedCode: stripped,
         faceVerified: false,
@@ -110,14 +142,11 @@ export default function GateEntryPage() {
       return;
     }
 
-    // Map code to a student (demo: use hash of code to pick student)
-    const codeHash = stripped.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-    const student = approved[codeHash % approved.length];
-
     const resolvedStudent: ResolvedStudent = {
       id: student.id,
       name: student.name,
       email: student.email,
+      photoUrl: student.selfie,
       verified: student.verificationStatus === "approved",
     };
     setResolved(resolvedStudent);
@@ -144,7 +173,7 @@ export default function GateEntryPage() {
 
     // Proceed to face verification
     setTimeout(() => setStep("face"), 600);
-  }, [refreshData]);
+  }, [refreshData, hackId]);
 
   /* ── Handle face verification result ────────────────────────────────────── */
   const handleFaceResult = ({ verified, score }: { verified: boolean; score: number }) => {
@@ -314,6 +343,7 @@ export default function GateEntryPage() {
 
           <FaceVerification
             studentName={resolved.name}
+            studentPhotoUrl={resolved.photoUrl}
             onResult={handleFaceResult}
             onCancel={resetFlow}
           />

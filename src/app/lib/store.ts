@@ -53,6 +53,7 @@ const SEED_STUDENTS: Student[] = [
         name: "Aditi Sharma",
         email: "aditi@college.edu",
         aadhaarMasked: "XXXX-XXXX-3412",
+        selfie: "/id-photos/aditi.png",
         otpVerified: true,
         faceMatchScore: 98,
         verificationStatus: "approved",
@@ -62,18 +63,31 @@ const SEED_STUDENTS: Student[] = [
         name: "Karthik Rao",
         email: "karthik@college.edu",
         aadhaarMasked: "XXXX-XXXX-0087",
-        otpVerified: false,
+        selfie: "/id-photos/karthik.png",
+        otpVerified: true,
         faceMatchScore: 72,
-        verificationStatus: "pending",
+        verificationStatus: "approved",
     },
     {
         id: "stu-003",
         name: "Priya Nair",
         email: "priya@college.edu",
         aadhaarMasked: "XXXX-XXXX-5521",
+        selfie: "/id-photos/priya.png",
         otpVerified: true,
         faceMatchScore: 91,
-        verificationStatus: "pending",
+        verificationStatus: "approved",
+    },
+    {
+        id: "stu-004",
+        name: "Sarthak Meher",
+        email: "sarthak@djsce.edu",
+        collegeId: "60003230197",
+        aadhaarMasked: "XXXX-XXXX-7890",
+        selfie: "/id-photos/sarthak.jpg",
+        otpVerified: true,
+        faceMatchScore: 95,
+        verificationStatus: "approved",
     },
 ];
 
@@ -400,6 +414,7 @@ export function calcWeightedScore(
 }
 
 // ─── QR token generator ───────────────────────────────────────────────────────
+// Format: PREFIX-STUDENTID-HASH (e.g. GATE-stu-001-A3K9NP)
 export function generateQRToken(prefix: string, studentId: string, seed: number): string {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let token = "";
@@ -408,5 +423,23 @@ export function generateQRToken(prefix: string, studentId: string, seed: number)
         token += chars[n % chars.length];
         n = Math.floor(n / chars.length) + (i + 1) * 13;
     }
-    return `${prefix}-${token}`;
+    return `${prefix}-${studentId}-${token}`;
+}
+
+// ─── Parse student ID from QR token ──────────────────────────────────────────
+// Extracts student ID from format: PREFIX-STUDENTID-HASH
+export function parseStudentIdFromToken(token: string): string | null {
+    // Format: PREFIX-studentId-HASH
+    // studentId format: "stu-XXX" (contains a dash itself)
+    // So we split by "-" and reconstruct
+    const parts = token.split("-");
+    if (parts.length < 4) return null; // needs at least PREFIX-stu-XXX-HASH
+    // parts[0] = prefix (GATE, MEAL-BREAKFAST, etc.)
+    // Middle parts = student ID (e.g. "stu", "001")
+    // Last part = hash (6 chars)
+    const hash = parts[parts.length - 1];
+    if (hash.length !== 6) return null;
+    // Student ID is everything between prefix and hash
+    const studentId = parts.slice(1, -1).join("-");
+    return studentId || null;
 }

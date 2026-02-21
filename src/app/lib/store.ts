@@ -1,6 +1,6 @@
 "use client";
 
-import { Hackathon, ScanLog, ScoreEntry, Student, Team } from "./types";
+import { GateEntryLog, GateEntryStats, Hackathon, ScanLog, ScoreEntry, Student, Team } from "./types";
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -168,6 +168,7 @@ const KEY_STUDENTS = "hs-students";
 const KEY_TEAMS = "hs-teams";
 const KEY_SCORES = "hs-scores";
 const KEY_SCANLOGS = "hs-scanlogs";
+const KEY_GATE_ENTRIES = "hs-gate-entries";
 
 function readLS<T>(key: string, seed: T[]): T[] {
     if (typeof window === "undefined") return seed;
@@ -279,53 +280,59 @@ export const Store = {
         writeLS(KEY_SCORES, list);
     },
 
-    // Scan logs
-    getScanLogs(): ScanLog[] {
-        return readLS(KEY_SCANLOGS, []);
+    // Scan logs — filtered per hackathon
+    getScanLogs(hackathonId?: string): ScanLog[] {
+        const all = readLS<ScanLog>(KEY_SCANLOGS, []);
+        return hackathonId ? all.filter((l) => l.hackathonId === hackathonId) : all;
     },
     addScanLog(log: ScanLog): void {
-        const list = this.getScanLogs();
+        const list = readLS<ScanLog>(KEY_SCANLOGS, []);
         list.unshift(log); // newest first
         writeLS(KEY_SCANLOGS, list);
     },
-    hasScanned(studentId: string, type: ScanLog["type"]): boolean {
-        return this.getScanLogs().some(
+    hasScanned(studentId: string, type: ScanLog["type"], hackathonId?: string): boolean {
+        return this.getScanLogs(hackathonId).some(
             (l) => l.studentId === studentId && l.type === type && l.result !== "blocked"
         );
     },
 
-    // ── Meal control (organizer-managed) ─────────────────────────────────────
+    // ── Meal control (organizer-managed, per-hackathon) ──────────────────────
     // Status per meal: "closed" | "open" | "done"
-    getMealControl(): Record<"Breakfast" | "Lunch" | "Dinner", "closed" | "open" | "done"> {
-        if (typeof window === "undefined") return { Breakfast: "closed", Lunch: "closed", Dinner: "closed" };
+    getMealControl(hackathonId?: string): Record<"Breakfast" | "Lunch" | "Dinner", "closed" | "open" | "done"> {
+        const DEFAULT = { Breakfast: "closed" as const, Lunch: "closed" as const, Dinner: "closed" as const };
+        if (typeof window === "undefined") return DEFAULT;
+        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
         try {
-            const raw = window.localStorage.getItem("hs-meal-control");
+            const raw = window.localStorage.getItem(key);
             if (raw) return JSON.parse(raw);
         } catch { /* */ }
-        return { Breakfast: "closed", Lunch: "closed", Dinner: "closed" };
+        return DEFAULT;
     },
-    setMealControl(meal: "Breakfast" | "Lunch" | "Dinner", status: "closed" | "open" | "done"): void {
+    setMealControl(meal: "Breakfast" | "Lunch" | "Dinner", status: "closed" | "open" | "done", hackathonId?: string): void {
         if (typeof window === "undefined") return;
-        const current = this.getMealControl();
+        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
+        const current = this.getMealControl(hackathonId);
         current[meal] = status;
-        window.localStorage.setItem("hs-meal-control", JSON.stringify(current));
+        window.localStorage.setItem(key, JSON.stringify(current));
     },
     /** Open a meal window. Automatically marks previous ones as "done". */
-    openMeal(meal: "Breakfast" | "Lunch" | "Dinner"): void {
+    openMeal(meal: "Breakfast" | "Lunch" | "Dinner", hackathonId?: string): void {
         const ORDER: ("Breakfast" | "Lunch" | "Dinner")[] = ["Breakfast", "Lunch", "Dinner"];
-        const control = this.getMealControl();
+        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
+        const control = this.getMealControl(hackathonId);
         ORDER.forEach((m) => {
             if (m === meal) control[m] = "open";
-            else if (control[m] === "open") control[m] = "done"; // close currently open
+            else if (control[m] === "open") control[m] = "done";
         });
         if (typeof window !== "undefined")
-            window.localStorage.setItem("hs-meal-control", JSON.stringify(control));
+            window.localStorage.setItem(key, JSON.stringify(control));
     },
-    closeMeal(meal: "Breakfast" | "Lunch" | "Dinner"): void {
-        const control = this.getMealControl();
+    closeMeal(meal: "Breakfast" | "Lunch" | "Dinner", hackathonId?: string): void {
+        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
+        const control = this.getMealControl(hackathonId);
         if (control[meal] === "open") control[meal] = "done";
         if (typeof window !== "undefined")
-            window.localStorage.setItem("hs-meal-control", JSON.stringify(control));
+            window.localStorage.setItem(key, JSON.stringify(control));
     },
 
     // ── Student hackathon registration ──────────────────────────────────────

@@ -5,13 +5,11 @@ import { Store, calcWeightedScore } from "../lib/store";
 import type { Student, Team, ScoreEntry } from "../lib/types";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
-import HackathonSelector from "../components/HackathonSelector";
 
 type AdminTab = "verification" | "qr" | "ppt" | "ranking" | "attendance" | "meals" | "sponsors";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("verification");
-  const [hackId, setHackId] = useState("campushack-2026");
   const [students, setStudents] = useState<Student[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [scores, setScores] = useState<ScoreEntry[]>([]);
@@ -25,12 +23,12 @@ export default function AdminPage() {
 
   const refresh = () => {
     setStudents(Store.getStudents());
-    setTeams(Store.getTeams(hackId));
-    setScores(Store.getScores(hackId));
-    setMealControl(Store.getMealControl(hackId));
+    setTeams(Store.getTeams("campushack-2026"));
+    setScores(Store.getScores("campushack-2026"));
+    setMealControl(Store.getMealControl());
   };
 
-  useEffect(() => { refresh(); }, [hackId]);
+  useEffect(() => { refresh(); }, []);
 
   const approve = (id: string) => { Store.approveStudent(id); refresh(); setToast({ msg: "Student approved ✓", tone: "emerald" }); };
   const flag = (id: string) => { Store.flagStudent(id); refresh(); setToast({ msg: "Student flagged ⚠", tone: "amber" }); };
@@ -84,7 +82,7 @@ export default function AdminPage() {
   };
 
   const exportReport = () => {
-    const scanLogs = Store.getScanLogs(hackId);
+    const scanLogs = Store.getScanLogs();
     const gate = scanLogs.filter((l) => l.type === "gate").length;
     const meals = { B: scanLogs.filter((l) => l.type === "breakfast").length, L: scanLogs.filter((l) => l.type === "lunch").length, D: scanLogs.filter((l) => l.type === "dinner").length };
     const lines = [
@@ -106,7 +104,7 @@ export default function AdminPage() {
   };
 
   const ranked = [...scores].sort((a, b) => b.weightedScore - a.weightedScore);
-  const scanLogs = Store.getScanLogs(hackId);
+  const scanLogs = Store.getScanLogs();
   const verified = students.filter((s) => s.verificationStatus === "approved").length;
   const pending = students.filter((s) => s.verificationStatus === "pending").length;
   const flagged = students.filter((s) => s.verificationStatus === "flagged").length;
@@ -128,15 +126,12 @@ export default function AdminPage() {
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Admin Control Panel</h1>
-          <p className="mt-1 text-sm text-slate-500">Full event management dashboard</p>
+          <p className="mt-1 text-sm text-slate-500">CampusHack 2026 — Full event management dashboard</p>
         </div>
         <button onClick={exportReport} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
           📥 Export event report
         </button>
       </header>
-
-      {/* Hackathon selector */}
-      <HackathonSelector selected={hackId} onSelect={(id) => setHackId(id)} />
 
       {/* Tabs */}
       <div className="mb-5 flex flex-wrap gap-2">
@@ -574,10 +569,10 @@ export default function AdminPage() {
                 <div
                   key={meal}
                   className={`rounded-2xl p-5 shadow-sm ring-1 transition-all ${status === "open"
-                    ? "bg-emerald-50 ring-emerald-300"
-                    : status === "done"
-                      ? "bg-slate-50 ring-slate-200"
-                      : "bg-white ring-slate-100"
+                      ? "bg-emerald-50 ring-emerald-300"
+                      : status === "done"
+                        ? "bg-slate-50 ring-slate-200"
+                        : "bg-white ring-slate-100"
                     }`}
                 >
                   <div className="flex items-center gap-2 mb-3">
@@ -591,10 +586,10 @@ export default function AdminPage() {
                   {/* Status indicator */}
                   <div className="mb-4">
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${status === "open"
-                      ? "bg-emerald-600 text-white"
-                      : status === "done"
-                        ? "bg-slate-400 text-white"
-                        : "bg-slate-200 text-slate-700"
+                        ? "bg-emerald-600 text-white"
+                        : status === "done"
+                          ? "bg-slate-400 text-white"
+                          : "bg-slate-200 text-slate-700"
                       }`}>
                       <span className={`h-2 w-2 rounded-full ${status === "open" ? "bg-white animate-pulse" : "bg-current opacity-50"}`} />
                       {status === "open" ? "Window OPEN — QRs active" : status === "done" ? "Window closed" : "Not started"}
@@ -606,7 +601,7 @@ export default function AdminPage() {
                     {status !== "open" && status !== "done" && (
                       <button
                         onClick={() => {
-                          Store.openMeal(meal, hackId);
+                          Store.openMeal(meal);
                           refresh();
                           setToast({ msg: `${meal} window opened ✓ — students can now see their QR`, tone: "emerald" });
                         }}
@@ -618,7 +613,7 @@ export default function AdminPage() {
                     {status === "open" && (
                       <button
                         onClick={() => {
-                          Store.closeMeal(meal, hackId);
+                          Store.closeMeal(meal);
                           refresh();
                           setToast({ msg: `${meal} window closed ✓`, tone: "amber" });
                         }}
@@ -643,7 +638,7 @@ export default function AdminPage() {
               {(["breakfast", "lunch", "dinner"] as const).map((m) => (
                 <div key={m} className="rounded-xl bg-slate-50 p-3 text-center">
                   <p className="text-lg font-semibold text-slate-900">
-                    {Store.getScanLogs(hackId).filter((l) => l.type === m && l.result === "valid").length}
+                    {Store.getScanLogs().filter((l) => l.type === m && l.result === "valid").length}
                   </p>
                   <p className="text-[10px] font-semibold uppercase text-slate-400 capitalize">{m}</p>
                 </div>

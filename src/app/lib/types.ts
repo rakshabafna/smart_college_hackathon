@@ -16,7 +16,6 @@ export type Student = {
     id: string;
     name: string;
     email: string;
-    college: string;
     collegeId?: string;          // filename of uploaded ID
     aadhaarMasked?: string;      // e.g. "XXXX-XXXX-3412"
     selfie?: string;             // base64 or filename
@@ -152,14 +151,7 @@ export type Team = {
     hackathonId: string;
     name: string;
     members: string[];           // student IDs
-    memberIds: string[];
-    leaderId: string;
-    pendingInvites: string[];
     problemStatement: string;
-    selectedProblemStatementId: string;
-    round1SubmissionUrl: string;
-    submissionLockedAt: number | null;
-    registrationMode: "solo" | "team";
     round1PPT?: string;          // filename
     finalPPT?: string;
     githubLink?: string;
@@ -210,30 +202,3 @@ export type ScanLog = {
 
 export type MealStatus = "Used" | "Pending" | "Upcoming";
 export type MealType = "Breakfast" | "Lunch" | "Dinner";
-
-// ─── Gate Entry Management ────────────────────────────────────────────────────
-export type GateEntryResult =
-    | "allowed"
-    | "blocked_duplicate"
-    | "blocked_unverified"
-    | "blocked_face_fail"
-    | "blocked_unknown";
-
-export type GateEntryLog = {
-    id: string;
-    studentId: string;
-    studentName: string;
-    hackathonId: string;
-    scannedCode: string;
-    faceVerified: boolean;
-    faceScore: number;
-    result: GateEntryResult;
-    timestamp: string;
-};
-
-export type GateEntryStats = {
-    totalScans: number;
-    uniqueEntries: number;
-    duplicatesBlocked: number;
-    faceFailures: number;
-};

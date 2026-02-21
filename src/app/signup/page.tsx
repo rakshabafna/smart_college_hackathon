@@ -14,7 +14,6 @@ type FormData = {
   name: string;
   email: string;
   phone: string;
-  role: "student" | "organizer";
   password: string;
   confirm: string;
 };
@@ -40,7 +39,7 @@ export default function SignUpPage() {
       const appUser = await signUpWithEmail(data.email, data.password, {
         displayName: data.name,
         phone: data.phone,
-        role: data.role,
+        role: "student",
       });
       // Sync to local Store for team displays
       Store.ensureStudent(appUser.uid, data.name, data.email);
@@ -315,9 +314,8 @@ export default function SignUpPage() {
         </form>
 
         <p className="mt-4 text-xs text-slate-500">
-          <strong>Students:</strong> After sign-up you&apos;ll complete verification (college ID, Aadhaar, selfie &amp; OTP).
-          <br />
-          <strong>Organisers:</strong> You&apos;ll go directly to the admin dashboard to create hackathons.
+          After sign-up you&apos;ll complete student verification (college ID, masked Aadhaar,
+          selfie &amp; OTP). Only verified students can register for hackathons.
         </p>
       </div>
     </div>

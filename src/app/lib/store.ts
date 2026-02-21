@@ -1,6 +1,6 @@
 "use client";
 
-import { GateEntryLog, GateEntryStats, Hackathon, ScanLog, ScoreEntry, Student, Team } from "./types";
+import { Hackathon, ScanLog, ScoreEntry, Student, Team } from "./types";
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -66,8 +66,8 @@ const SEED_STUDENTS: Student[] = [
         id: "stu-001",
         name: "Aditi Sharma",
         email: "aditi@college.edu",
-        college: "St. Xavier's College",
         aadhaarMasked: "XXXX-XXXX-3412",
+        selfie: "/id-photos/aditi.png",
         otpVerified: true,
         faceMatchScore: 98,
         verificationStatus: "approved",
@@ -76,21 +76,32 @@ const SEED_STUDENTS: Student[] = [
         id: "stu-002",
         name: "Karthik Rao",
         email: "karthik@college.edu",
-        college: "St. Xavier's College",
         aadhaarMasked: "XXXX-XXXX-0087",
-        otpVerified: false,
+        selfie: "/id-photos/karthik.png",
+        otpVerified: true,
         faceMatchScore: 72,
-        verificationStatus: "pending",
+        verificationStatus: "approved",
     },
     {
         id: "stu-003",
         name: "Priya Nair",
         email: "priya@college.edu",
-        college: "St. Xavier's College",
         aadhaarMasked: "XXXX-XXXX-5521",
+        selfie: "/id-photos/priya.png",
         otpVerified: true,
         faceMatchScore: 91,
-        verificationStatus: "pending",
+        verificationStatus: "approved",
+    },
+    {
+        id: "stu-004",
+        name: "Sarthak Meher",
+        email: "sarthak@djsce.edu",
+        collegeId: "60003230197",
+        aadhaarMasked: "XXXX-XXXX-7890",
+        selfie: "/id-photos/sarthak.jpg",
+        otpVerified: true,
+        faceMatchScore: 95,
+        verificationStatus: "approved",
     },
 ];
 
@@ -197,7 +208,6 @@ const KEY_STUDENTS = "hs-students";
 const KEY_TEAMS = "hs-teams";
 const KEY_SCORES = "hs-scores";
 const KEY_SCANLOGS = "hs-scanlogs";
-const KEY_GATE_ENTRIES = "hs-gate-entries";
 
 function readLS<T>(key: string, seed: T[]): T[] {
     if (typeof window === "undefined") return seed;
@@ -338,59 +348,53 @@ export const Store = {
     },
 
 
-    // Scan logs — filtered per hackathon
-    getScanLogs(hackathonId?: string): ScanLog[] {
-        const all = readLS<ScanLog>(KEY_SCANLOGS, []);
-        return hackathonId ? all.filter((l) => l.hackathonId === hackathonId) : all;
+    // Scan logs
+    getScanLogs(): ScanLog[] {
+        return readLS(KEY_SCANLOGS, []);
     },
     addScanLog(log: ScanLog): void {
-        const list = readLS<ScanLog>(KEY_SCANLOGS, []);
+        const list = this.getScanLogs();
         list.unshift(log); // newest first
         writeLS(KEY_SCANLOGS, list);
     },
-    hasScanned(studentId: string, type: ScanLog["type"], hackathonId?: string): boolean {
-        return this.getScanLogs(hackathonId).some(
+    hasScanned(studentId: string, type: ScanLog["type"]): boolean {
+        return this.getScanLogs().some(
             (l) => l.studentId === studentId && l.type === type && l.result !== "blocked"
         );
     },
 
-    // ── Meal control (organizer-managed, per-hackathon) ──────────────────────
+    // ── Meal control (organizer-managed) ─────────────────────────────────────
     // Status per meal: "closed" | "open" | "done"
-    getMealControl(hackathonId?: string): Record<"Breakfast" | "Lunch" | "Dinner", "closed" | "open" | "done"> {
-        const DEFAULT = { Breakfast: "closed" as const, Lunch: "closed" as const, Dinner: "closed" as const };
-        if (typeof window === "undefined") return DEFAULT;
-        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
+    getMealControl(): Record<"Breakfast" | "Lunch" | "Dinner", "closed" | "open" | "done"> {
+        if (typeof window === "undefined") return { Breakfast: "closed", Lunch: "closed", Dinner: "closed" };
         try {
-            const raw = window.localStorage.getItem(key);
+            const raw = window.localStorage.getItem("hs-meal-control");
             if (raw) return JSON.parse(raw);
         } catch { /* */ }
-        return DEFAULT;
+        return { Breakfast: "closed", Lunch: "closed", Dinner: "closed" };
     },
-    setMealControl(meal: "Breakfast" | "Lunch" | "Dinner", status: "closed" | "open" | "done", hackathonId?: string): void {
+    setMealControl(meal: "Breakfast" | "Lunch" | "Dinner", status: "closed" | "open" | "done"): void {
         if (typeof window === "undefined") return;
-        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
-        const current = this.getMealControl(hackathonId);
+        const current = this.getMealControl();
         current[meal] = status;
-        window.localStorage.setItem(key, JSON.stringify(current));
+        window.localStorage.setItem("hs-meal-control", JSON.stringify(current));
     },
     /** Open a meal window. Automatically marks previous ones as "done". */
-    openMeal(meal: "Breakfast" | "Lunch" | "Dinner", hackathonId?: string): void {
+    openMeal(meal: "Breakfast" | "Lunch" | "Dinner"): void {
         const ORDER: ("Breakfast" | "Lunch" | "Dinner")[] = ["Breakfast", "Lunch", "Dinner"];
-        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
-        const control = this.getMealControl(hackathonId);
+        const control = this.getMealControl();
         ORDER.forEach((m) => {
             if (m === meal) control[m] = "open";
-            else if (control[m] === "open") control[m] = "done";
+            else if (control[m] === "open") control[m] = "done"; // close currently open
         });
         if (typeof window !== "undefined")
-            window.localStorage.setItem(key, JSON.stringify(control));
+            window.localStorage.setItem("hs-meal-control", JSON.stringify(control));
     },
-    closeMeal(meal: "Breakfast" | "Lunch" | "Dinner", hackathonId?: string): void {
-        const key = hackathonId ? `hs-meal-control-${hackathonId}` : "hs-meal-control";
-        const control = this.getMealControl(hackathonId);
+    closeMeal(meal: "Breakfast" | "Lunch" | "Dinner"): void {
+        const control = this.getMealControl();
         if (control[meal] === "open") control[meal] = "done";
         if (typeof window !== "undefined")
-            window.localStorage.setItem(key, JSON.stringify(control));
+            window.localStorage.setItem("hs-meal-control", JSON.stringify(control));
     },
 
     // ── Student hackathon registration ──────────────────────────────────────
@@ -623,6 +627,7 @@ export function calcWeightedScore(
 }
 
 // ─── QR token generator ───────────────────────────────────────────────────────
+// Format: PREFIX-STUDENTID-HASH (e.g. GATE-stu-001-A3K9NP)
 export function generateQRToken(prefix: string, studentId: string, seed: number): string {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let token = "";
@@ -631,5 +636,23 @@ export function generateQRToken(prefix: string, studentId: string, seed: number)
         token += chars[n % chars.length];
         n = Math.floor(n / chars.length) + (i + 1) * 13;
     }
-    return `${prefix}-${token}`;
+    return `${prefix}-${studentId}-${token}`;
+}
+
+// ─── Parse student ID from QR token ──────────────────────────────────────────
+// Extracts student ID from format: PREFIX-STUDENTID-HASH
+export function parseStudentIdFromToken(token: string): string | null {
+    // Format: PREFIX-studentId-HASH
+    // studentId format: "stu-XXX" (contains a dash itself)
+    // So we split by "-" and reconstruct
+    const parts = token.split("-");
+    if (parts.length < 4) return null; // needs at least PREFIX-stu-XXX-HASH
+    // parts[0] = prefix (GATE, MEAL-BREAKFAST, etc.)
+    // Middle parts = student ID (e.g. "stu", "001")
+    // Last part = hash (6 chars)
+    const hash = parts[parts.length - 1];
+    if (hash.length !== 6) return null;
+    // Student ID is everything between prefix and hash
+    const studentId = parts.slice(1, -1).join("-");
+    return studentId || null;
 }

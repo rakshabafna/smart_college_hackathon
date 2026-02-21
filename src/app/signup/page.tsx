@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { sendEmailVerification } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { useAuth } from "../AuthContext";
 import { googleProvider, githubProvider } from "../../lib/auth-providers";
+import { Store } from "../lib/store";
 
 type FormData = {
   name: string;
@@ -20,6 +21,7 @@ type FormData = {
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signUpWithEmail, signInWithOAuth } = useAuth();
   const [firebaseError, setFirebaseError] = useState("");
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
@@ -35,16 +37,23 @@ export default function SignUpPage() {
   const onSubmit = async (data: FormData) => {
     setFirebaseError("");
     try {
-      await signUpWithEmail(data.email, data.password, {
+      const appUser = await signUpWithEmail(data.email, data.password, {
         displayName: data.name,
         phone: data.phone,
         role: data.role,
       });
+      // Sync to local Store for team displays
+      Store.ensureStudent(appUser.uid, data.name, data.email);
       // Send Firebase email verification
-      if (auth.currentUser) {
+      if (auth && auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
       }
-      router.push(data.role === "organizer" ? "/admin" : "/student/verify");
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        router.push(decodeURIComponent(redirect));
+      } else {
+        router.push(data.role === "organizer" ? "/admin" : "/student/verify");
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Sign-up failed. Please try again.";
@@ -66,8 +75,13 @@ export default function SignUpPage() {
     setOauthLoading(providerType);
     try {
       const provider = providerType === "google" ? googleProvider : githubProvider;
-      const { isNewUser } = await signInWithOAuth(provider);
-      if (isNewUser) {
+      const { appUser, isNewUser } = await signInWithOAuth(provider);
+      // Sync to local Store
+      Store.ensureStudent(appUser.uid, appUser.displayName, appUser.email);
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        router.push(decodeURIComponent(redirect));
+      } else if (isNewUser) {
         router.push("/student/verification");
       } else {
         router.push("/");
@@ -223,8 +237,8 @@ export default function SignUpPage() {
                 <label
                   key={opt.value}
                   className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-center transition-all ${watch("role") === opt.value
-                      ? "border-blue-500 bg-blue-50 shadow-sm"
-                      : "border-slate-200 bg-white hover:border-slate-300"
+                    ? "border-blue-500 bg-blue-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                 >
                   <input

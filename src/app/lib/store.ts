@@ -17,6 +17,7 @@ const SEED_HACKATHONS: Hackathon[] = [
         location: "Mumbai, India",
         problemStatements:
             "1. Build a smart student identity system.\n2. Create an offline-first campus app.\n3. Design a sustainability tracker for college campuses.",
+        round1StartDate: Date.now() + 2 * 24 * 60 * 60 * 1000,
         round1Deadline: Date.now() + 7 * 24 * 60 * 60 * 1000,
         problemStatementEntries: [
             { id: "ps-1", title: "Smart Student Identity System", description: "Build a secure, verifiable student identity system for campus authentication and credential verification.", track: "Identity & Security" },
@@ -43,6 +44,7 @@ const SEED_HACKATHONS: Hackathon[] = [
         location: "Bangalore, India",
         problemStatements:
             "1. Personalised study plan generator using LLMs.\n2. AI-powered plagiarism detector for college assignments.",
+        round1StartDate: Date.now() + 2 * 24 * 60 * 60 * 1000,
         round1Deadline: Date.now() + 7 * 24 * 60 * 60 * 1000,
         problemStatementEntries: [
             { id: "ps-ai-1", title: "Personalised Study Plan Generator", description: "Use LLMs to generate adaptive study plans based on syllabus, deadlines, and learning style.", track: "AI x EdTech" },
@@ -98,36 +100,63 @@ const SEED_TEAMS: Team[] = [
         hackathonId: "campushack-2026",
         name: "Zero Knowledge Ninjas",
         members: ["stu-001"],
+        memberIds: ["stu-001"],
+        leaderId: "stu-001",
+        pendingInvites: [],
         problemStatement: "Build a smart student identity system.",
+        selectedProblemStatementId: "",
+        round1SubmissionUrl: "",
+        submissionLockedAt: null,
+        registrationMode: "team",
         round1PPT: "ZK-Ninjas-R1.pdf",
-        finalPPT: "ZK-Ninjas-Final.pdf",
-        githubLink: "github.com/zk-ninjas/identity-dapp",
-        demoVideo: "https://youtube.com/watch?v=demo1",
-        submissionStatus: "submitted",
-        applicationComplete: true,
-        applicationSteps: { verification: true, registration: true, qr: true, final: true, ai: false },
+        submissionStatus: "draft",
+        applicationComplete: false,
+        applicationSteps: { verification: false, registration: true, qr: false, final: false, ai: false },
+        shortlisted: false,
+        rank: null,
+        notifiedAt: null,
     },
     {
         id: "team-002",
         hackathonId: "campushack-2026",
-        name: "Campus Mesh",
+        name: "Green Ledger",
         members: ["stu-002"],
-        problemStatement: "Create an offline-first campus app.",
-        round1PPT: "CampusMesh-R1.pdf",
+        memberIds: ["stu-002"],
+        leaderId: "stu-002",
+        pendingInvites: [],
+        problemStatement: "Blockchain for carbon credits.",
+        selectedProblemStatementId: "",
+        round1SubmissionUrl: "",
+        submissionLockedAt: null,
+        registrationMode: "team",
+        round1PPT: "GreenLedger-R1.pdf",
         submissionStatus: "draft",
         applicationComplete: false,
         applicationSteps: { verification: true, registration: true, qr: false, final: false, ai: false },
+        shortlisted: false,
+        rank: null,
+        notifiedAt: null,
     },
     {
         id: "team-003",
         hackathonId: "campushack-2026",
-        name: "GreenLedger",
+        name: "Team Alpha",
         members: ["stu-003"],
-        problemStatement: "Design a sustainability tracker for college campuses.",
-        round1PPT: "GreenLedger-R1.pdf",
+        memberIds: ["stu-003"],
+        leaderId: "stu-003",
+        pendingInvites: [],
+        problemStatement: "Smart waste management.",
+        selectedProblemStatementId: "",
+        round1SubmissionUrl: "",
+        submissionLockedAt: null,
+        registrationMode: "team",
+        round1PPT: "Alpha-R1.pdf",
         submissionStatus: "draft",
         applicationComplete: false,
         applicationSteps: { verification: false, registration: true, qr: false, final: false, ai: false },
+        shortlisted: false,
+        rank: null,
+        notifiedAt: null,
     },
 ];
 
@@ -194,7 +223,19 @@ function writeLS<T>(key: string, data: T[]): void {
 export const Store = {
     // Hackathons
     getHackathons(): Hackathon[] {
-        return readLS(KEY_HACKATHONS, SEED_HACKATHONS);
+        const stored = readLS(KEY_HACKATHONS, SEED_HACKATHONS);
+        // Simple migration: if seed hackathons are missing the new dates, update them
+        let changed = false;
+        const updated = stored.map(h => {
+            const seed = SEED_HACKATHONS.find(s => s.id === h.id);
+            if (seed && (!h.round1StartDate || !h.round1Deadline)) {
+                changed = true;
+                return { ...h, round1StartDate: seed.round1StartDate, round1Deadline: seed.round1Deadline };
+            }
+            return h;
+        });
+        if (changed) writeLS(KEY_HACKATHONS, updated);
+        return updated;
     },
     getHackathon(id: string): Hackathon | undefined {
         return this.getHackathons().find((h) => h.id === id);
@@ -216,11 +257,34 @@ export const Store = {
         return this.getStudents().find((s) => s.email === email);
     },
     upsertStudent(student: Student): void {
-        const list = this.getStudents();
-        const idx = list.findIndex((s) => s.id === student.id);
-        if (idx >= 0) list[idx] = student;
-        else list.push(student);
-        writeLS(KEY_STUDENTS, list);
+        const students = readLS<Student>(KEY_STUDENTS, SEED_STUDENTS);
+        const idx = students.findIndex((s) => s.id === student.id);
+        if (idx !== -1) {
+            students[idx] = { ...students[idx], ...student };
+        } else {
+            students.push(student);
+        }
+        writeLS(KEY_STUDENTS, students);
+    },
+    ensureStudent(id: string, name: string, email: string): void {
+        const students = readLS<Student>(KEY_STUDENTS, SEED_STUDENTS);
+        const idx = students.findIndex((s) => s.id === id);
+        if (idx !== -1) {
+            const existing = students[idx];
+            if (!existing.name || existing.name === existing.email || existing.name === existing.id) {
+                students[idx] = { ...existing, name, email };
+                writeLS(KEY_STUDENTS, students);
+            }
+        } else {
+            this.upsertStudent({
+                id,
+                name: name || email || id,
+                email,
+                college: "",
+                otpVerified: false,
+                verificationStatus: "pending",
+            });
+        }
     },
     approveStudent(id: string): void {
         const list = this.getStudents();
@@ -272,13 +336,7 @@ export const Store = {
         else list.push(score);
         writeLS(KEY_SCORES, list);
     },
-    shortlistTeam(teamId: string, round: "round1" | "final"): void {
-        const list = readLS(KEY_SCORES, SEED_SCORES);
-        list
-            .filter((s) => s.teamId === teamId && s.round === round)
-            .forEach((s) => (s.shortlisted = true));
-        writeLS(KEY_SCORES, list);
-    },
+
 
     // Scan logs — filtered per hackathon
     getScanLogs(hackathonId?: string): ScanLog[] {
@@ -374,13 +432,13 @@ export const Store = {
         if (typeof window === "undefined") return null;
         return window.localStorage.getItem(`hs-reg-team-${hackathonId}`);
     },
-    registerSolo(hackathonId: string, studentId: string): Team {
+    registerSolo(hackathonId: string, studentId: string, name?: string): Team {
         const teamId = `team-${hackathonId}-${Date.now()}-solo`;
         const team: Team = {
             id: teamId,
             hackathonId,
-            name: "",
-            members: [studentId],
+            name: name || "Solo Project",
+            members: [name || studentId],
             memberIds: [studentId],
             leaderId: studentId,
             pendingInvites: [],
@@ -392,6 +450,9 @@ export const Store = {
             submissionStatus: "not_started",
             applicationComplete: false,
             applicationSteps: { verification: false, registration: false, qr: false, final: false, ai: false },
+            shortlisted: false,
+            rank: null,
+            notifiedAt: null,
         };
         this.upsertTeam(team);
         this.registerForHackathon(hackathonId);
@@ -401,13 +462,13 @@ export const Store = {
         }
         return team;
     },
-    createTeam(hackathonId: string, leaderId: string, teamName: string): Team {
+    createTeam(hackathonId: string, leaderId: string, teamName: string, leaderName?: string): Team {
         const teamId = `team-${hackathonId}-${Date.now()}`;
         const team: Team = {
             id: teamId,
             hackathonId,
             name: teamName,
-            members: [leaderId],
+            members: [leaderName || leaderId],
             memberIds: [leaderId],
             leaderId,
             pendingInvites: [],
@@ -419,6 +480,9 @@ export const Store = {
             submissionStatus: "not_started",
             applicationComplete: false,
             applicationSteps: { verification: false, registration: false, qr: false, final: false, ai: false },
+            shortlisted: false,
+            rank: null,
+            notifiedAt: null,
         };
         this.upsertTeam(team);
         this.registerForHackathon(hackathonId);
@@ -428,29 +492,7 @@ export const Store = {
         }
         return team;
     },
-    inviteMember(teamId: string, email: string): void {
-        const team = this.getTeam(teamId);
-        if (!team) return;
-        const student = this.getStudentByEmail(email);
-        if (!student) return;
-        const id = student.id;
-        const pending = team.pendingInvites ?? [];
-        if (pending.includes(id)) return;
-        this.upsertTeam({ ...team, pendingInvites: [...pending, id] });
-    },
-    getInvitesForStudent(studentId: string): Team[] {
-        return this.getTeams().filter(
-            (t) => (t.pendingInvites ?? []).includes(studentId)
-        );
-    },
-    acceptInvite(teamId: string, studentId: string): void {
-        const team = this.getTeam(teamId);
-        if (!team) return;
-        const pending = (team.pendingInvites ?? []).filter((id) => id !== studentId);
-        const members = team.members.includes(studentId) ? team.members : [...team.members, studentId];
-        const memberIds = (team.memberIds ?? []).includes(studentId) ? team.memberIds : [...(team.memberIds ?? []), studentId];
-        this.upsertTeam({ ...team, pendingInvites: pending, members, memberIds });
-    },
+
     selectProblemStatement(teamId: string, psId: string): void {
         const team = this.getTeam(teamId);
         if (!team) return;
@@ -479,6 +521,86 @@ export const Store = {
         const team = this.getTeam(teamId);
         if (!team) return;
         this.upsertTeam({ ...team, round1SubmissionUrl: downloadURL });
+    },
+    submitTeam(teamId: string): void {
+        const teams = this.getTeams();
+        const idx = teams.findIndex((t) => t.id === teamId);
+        if (idx === -1) return;
+        teams[idx].submissionStatus = "submitted";
+        teams[idx].submissionLockedAt = Date.now();
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
+    },
+    shortlistTeam(teamId: string, rank: number): void {
+        const teams = this.getTeams();
+        const idx = teams.findIndex((t) => t.id === teamId);
+        if (idx === -1) return;
+        teams[idx].shortlisted = true;
+        teams[idx].rank = rank;
+        teams[idx].notifiedAt = Date.now();
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
+    },
+    getShortlistedTeams(hackathonId: string): Team[] {
+        return this.getTeams(hackathonId)
+            .filter((t) => t.shortlisted === true)
+            .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
+    },
+    getStudentTeam(hackathonId: string, studentId: string): Team | undefined {
+        return this.getTeams(hackathonId).find(
+            (t) => (t.memberIds ?? []).includes(studentId) || (t.members ?? []).includes(studentId) || t.leaderId === studentId
+        );
+    },
+    markNotified(teamId: string): void {
+        const teams = this.getTeams();
+        const idx = teams.findIndex((t) => t.id === teamId);
+        if (idx === -1) return;
+        teams[idx].notifiedAt = Date.now();
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
+    },
+    inviteMember(teamId: string, email: string): void {
+        const teams = this.getTeams();
+        const idx = teams.findIndex((t) => t.id === teamId);
+        if (idx === -1) return;
+        if (!teams[idx].pendingInvites) teams[idx].pendingInvites = [];
+        if (!teams[idx].pendingInvites.includes(email)) {
+            teams[idx].pendingInvites.push(email);
+        }
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
+    },
+    getPendingInvites(email: string): { team: Team; hackathon: Hackathon }[] {
+        const teams = this.getTeams();
+        return teams
+            .filter((t) => t.pendingInvites?.includes(email))
+            .map((t) => ({ team: t, hackathon: this.getHackathon(t.hackathonId)! }))
+            .filter((x) => x.hackathon);
+    },
+    getInvitesForStudent(studentId: string): Team[] {
+        const student = this.getStudent(studentId);
+        if (!student) return [];
+        return this.getTeams().filter(
+            (t) => t.pendingInvites?.includes(student.email) || t.pendingInvites?.includes(studentId)
+        );
+    },
+    acceptInvite(teamId: string, studentId: string): void {
+        const teams = this.getTeams();
+        const idx = teams.findIndex((t) => t.id === teamId);
+        if (idx === -1) return;
+        const student = this.getStudent(studentId);
+        const email = student?.email ?? studentId;
+        teams[idx].pendingInvites = (teams[idx].pendingInvites ?? []).filter((e) => e !== email && e !== studentId);
+        if (!teams[idx].members.includes(studentId)) teams[idx].members.push(studentId);
+        if (!teams[idx].memberIds.includes(studentId)) teams[idx].memberIds.push(studentId);
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
+    },
+    declineInvite(teamId: string, email: string): void {
+        const teams = this.getTeams();
+        const idx = teams.findIndex((t) => t.id === teamId);
+        if (idx === -1) return;
+        teams[idx].pendingInvites = (teams[idx].pendingInvites ?? []).filter((e) => e !== email);
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
+    },
+    deleteTeam(teamId: string): void {
+        const teams = this.getTeams().filter((t) => t.id !== teamId);
+        localStorage.setItem("hs-teams", JSON.stringify(teams));
     },
 };
 

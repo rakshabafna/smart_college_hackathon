@@ -16,6 +16,7 @@ export type Student = {
     id: string;
     name: string;
     email: string;
+    college: string;
     collegeId?: string;          // filename of uploaded ID
     aadhaarMasked?: string;      // e.g. "XXXX-XXXX-3412"
     selfie?: string;             // base64 or filename
@@ -96,6 +97,8 @@ export type Hackathon = {
     endDate: string;
     registrationDeadline?: string; // when registration closes
     registrationFee?: string;      // e.g. "Free", "₹400", "₹500"
+    round1Deadline?: number;      // unix ms
+    problemStatements?: { id: string; title: string; description: string }[];
     location?: string;
     venue?: string;
     bannerPreview?: string;
@@ -148,7 +151,14 @@ export type Team = {
     hackathonId: string;
     name: string;
     members: string[];           // student IDs
+    memberIds: string[];
+    leaderId: string;
+    pendingInvites: string[];
     problemStatement: string;
+    selectedProblemStatementId: string;
+    round1SubmissionUrl: string;
+    submissionLockedAt: number | null;
+    registrationMode: "solo" | "team";
     round1PPT?: string;          // filename
     finalPPT?: string;
     githubLink?: string;

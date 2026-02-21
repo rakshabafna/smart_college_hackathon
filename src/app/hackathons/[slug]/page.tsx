@@ -1,5 +1,5 @@
 "use client";
-
+import { useRouter } from 'next/navigation'
 import Link from "next/link";
 import { useEffect, useMemo, useState, use } from "react";
 import { Store } from "../../lib/store";
@@ -28,6 +28,7 @@ function saveSteps(slug: string, steps: Record<StepKey, boolean>) {
 
 export default function HackathonDetail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const router = useRouter();
   const [hackathon, setHackathon] = useState<Hackathon | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -62,10 +63,7 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
 
   const handleRegister = () => {
     if (registered) return;
-    Store.registerForHackathon(hackathon?.id ?? slug);
-    setRegistered(true);
-    // Refresh hackathon to show updated applicant count
-    setHackathon(Store.getHackathon(slug) ?? null);
+    router.push(`/hackathons/${slug}/register`);
   };
 
   if (!hackathon) return <div className="p-10 text-center text-slate-400">Hackathon not found.</div>;
@@ -458,10 +456,13 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
 
             {/* Register Button */}
             {registered ? (
-              <div className="mt-4 flex items-center justify-center gap-2 rounded-full bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs">✓</span>
-                <span className="text-sm font-bold text-emerald-700">Registered Successfully</span>
-              </div>
+              <button
+                type="button"
+                onClick={() => router.push(`/hackathons/${slug}/register`)}
+                className="mt-4 w-full rounded-full border-2 border-emerald-500 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100 transition-colors"
+              >
+                View Registration →
+              </button>
             ) : (
               <button
                 onClick={handleRegister}

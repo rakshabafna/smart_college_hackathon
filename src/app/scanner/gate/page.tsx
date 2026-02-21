@@ -1,17 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Store } from "../../lib/store";
-import type { ScanLog } from "../../lib/types";
+import { useEffect, useState, useCallback } from "react";
+import { Store, parseStudentIdFromToken } from "../../lib/store";
+import type { GateEntryLog, GateEntryResult, GateEntryStats } from "../../lib/types";
+import QRScannerCamera from "../../components/QRScannerCamera";
+import FaceVerification from "../../components/FaceVerification";
+import HackathonSelector from "../../components/HackathonSelector";
 
 type ScanResult = "allowed" | "blocked_duplicate" | "blocked_unknown" | null;
 
-export default function GateScannerPage() {
-  const [code, setCode] = useState("");
-  const [result, setResult] = useState<ScanResult>(null);
-  const [lastScan, setLastScan] = useState<{ name: string; code: string; time: string } | null>(null);
-  const [logs, setLogs] = useState<ScanLog[]>([]);
-  const [stats, setStats] = useState({ total: 0, unique: 0, blocked: 0 });
+/* ─── Resolved student from QR code ────────────────────────────────────────── */
+type ResolvedStudent = {
+  id: string;
+  name: string;
+  email: string;
+  photoUrl?: string;
+  verified: boolean;
+};
 
   useEffect(() => { refreshLogs(); }, []);
 
@@ -26,38 +31,142 @@ export default function GateScannerPage() {
   const handleScan = () => {
     if (!code.trim()) return;
     const stripped = code.trim().toUpperCase();
-    // Extract student ID fragment from token: GATE-XYZABC → look up
-    const students = Store.getStudents();
-    // Match by token prefix pattern: find approved students
-    const approved = students.filter((s) => s.verificationStatus === "approved");
+    setScannedCode(stripped);
+    setStep("lookup");
 
-    // Simulate: any GATE- prefixed code for approved student → allowed; duplicates blocked
-    const isGateCode = stripped.startsWith("GATE-");
-    if (!isGateCode) {
-      setResult("blocked_unknown");
-      setLastScan({ name: "Unknown code", code: stripped, time: new Date().toLocaleTimeString() });
-      const log: ScanLog = { id: `scan-${Date.now()}`, studentId: "unknown", studentName: "Unknown", hackathonId: "campushack-2026", type: "gate", result: "blocked", timestamp: new Date().toISOString() };
-      Store.addScanLog(log);
-      refreshLogs();
-      setCode("");
+    // Must be a GATE- prefixed code
+    if (!stripped.startsWith("GATE-")) {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: "unknown",
+        studentName: "Unknown",
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_unknown",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_unknown");
+      setStep("result");
+      refreshData();
       return;
     }
 
-    // Pick a student to associate with (demo: rotate through approved)
-    const alreadyScanned = Store.getScanLogs().find((l) => l.type === "gate" && l.result === "allowed" && l.studentId === (approved[0]?.id ?? "demo"));
-    const student = approved[alreadyScanned ? 1 : 0] ?? approved[0];
+    // Parse student ID from QR code (format: GATE-{studentId}-{hash})
+    const studentId = parseStudentIdFromToken(stripped);
+    const allStudents = Store.getStudents();
+    const approved = allStudents.filter((s) => s.verificationStatus === "approved");
 
-    if (alreadyScanned && student) {
-      setResult("blocked_duplicate");
-      setLastScan({ name: student.name, code: stripped, time: new Date().toLocaleTimeString() });
-      const log: ScanLog = { id: `scan-${Date.now()}`, studentId: student.id, studentName: student.name, hackathonId: "campushack-2026", type: "gate", result: "blocked", timestamp: new Date().toISOString() };
-      Store.addScanLog(log);
-    } else {
-      setResult("allowed");
-      const name = student?.name ?? "Verified Student";
-      setLastScan({ name, code: stripped, time: new Date().toLocaleTimeString() });
-      const log: ScanLog = { id: `scan-${Date.now()}`, studentId: student?.id ?? "demo", studentName: name, hackathonId: "campushack-2026", type: "gate", result: "allowed", timestamp: new Date().toISOString() };
-      Store.addScanLog(log);
+    // Try direct ID lookup first, then fall back to hash-based for short codes (e.g. GATE-ABCDEF)
+    let student = studentId
+      ? allStudents.find((s) => s.id.toLowerCase() === studentId.toLowerCase())
+      : null;
+
+    if (!student && approved.length > 0) {
+      // Fallback: hash the code to pick an approved student
+      const codeHash = stripped.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+      student = approved[codeHash % approved.length];
+    }
+
+    if (!student) {
+      // No approved students at all
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: studentId ?? "unknown",
+        studentName: "Unknown Student",
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_unknown",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_unknown");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    // Check if student is verified
+    if (student.verificationStatus !== "approved") {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: student.id,
+        studentName: student.name,
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_unverified",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_unverified");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    const resolvedStudent: ResolvedStudent = {
+      id: student.id,
+      name: student.name,
+      email: student.email,
+      photoUrl: student.selfie,
+      verified: student.verificationStatus === "approved",
+    };
+    setResolved(resolvedStudent);
+
+    // Check duplicate entry
+    if (Store.hasGateEntry(student.id, hackId)) {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: student.id,
+        studentName: student.name,
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_duplicate",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_duplicate");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    // Proceed to face verification
+    setTimeout(() => setStep("face"), 600);
+  }, [refreshData, hackId]);
+
+  /* ── Handle face verification result ────────────────────────────────────── */
+  const handleFaceResult = ({ verified, score }: { verified: boolean; score: number }) => {
+    setFaceScore(score);
+    const result: GateEntryResult = verified ? "allowed" : "blocked_face_fail";
+
+    const entry: GateEntryLog = {
+      id: `ge-${Date.now()}`,
+      studentId: resolved?.id ?? "unknown",
+      studentName: resolved?.name ?? "Unknown",
+      hackathonId: "campushack-2026",
+      scannedCode,
+      faceVerified: verified,
+      faceScore: score,
+      result,
+      timestamp: new Date().toISOString(),
+    };
+    Store.addGateEntry(entry);
+    setEntryResult(result);
+    setStep("result");
+    refreshData();
+
+    // Vibrate on result (if supported)
+    if (navigator.vibrate) {
+      navigator.vibrate(verified ? [100] : [200, 50, 200]);
     }
     refreshLogs();
     setCode("");
@@ -88,16 +197,108 @@ export default function GateScannerPage() {
         ))}
       </div>
 
-      {/* Scanner input */}
-      <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Enter gate QR code</p>
-        <div className="flex gap-2">
-          <input
-            className="flex-1 rounded-xl border border-slate-200 px-4 py-3 font-mono text-sm uppercase outline-none placeholder:text-slate-400 placeholder:normal-case focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            placeholder="e.g. GATE-XXXXXX"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }}
+      {/* Step indicators */}
+      <div className="mb-5 flex items-center justify-center gap-0">
+        {(["scan", "face", "result"] as const).map((s, i) => {
+          const labels = { scan: "QR Scan", face: "Face ID", result: "Result" };
+          const icons = { scan: "📱", face: "🪪", result: "✓" };
+          const isActive = step === s || (step === "lookup" && s === "scan");
+          const isDone = (step === "face" && s === "scan") || (step === "result" && (s === "scan" || s === "face"));
+
+          return (
+            <div key={s} className="flex items-center">
+              <div className="flex flex-col items-center">
+                <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${isDone
+                  ? "bg-emerald-100 text-emerald-700 ring-2 ring-emerald-300"
+                  : isActive
+                    ? "bg-blue-600 text-white ring-2 ring-blue-300 shadow-lg scale-110"
+                    : "bg-slate-100 text-slate-400"
+                  }`}>
+                  {isDone ? "✓" : icons[s]}
+                </div>
+                <span className={`mt-1 text-[10px] font-semibold ${isActive ? "text-blue-600" : isDone ? "text-emerald-600" : "text-slate-400"}`}>
+                  {labels[s]}
+                </span>
+              </div>
+              {i < 2 && (
+                <div className={`mx-2 mb-4 h-0.5 w-10 rounded transition-all duration-500 ${isDone ? "bg-emerald-400" : "bg-slate-200"}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ─── STEP: QR SCAN ─────────────────────────────────────────────── */}
+      {(step === "scan" || step === "lookup") && (
+        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          {!useManual ? (
+            <>
+              <QRScannerCamera onScan={processCode} active={scannerActive} />
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => setUseManual(true)}
+                  className="text-xs text-blue-600 hover:underline font-medium"
+                >
+                  ⌨️ Use manual code input instead
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Enter gate QR code manually</p>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 rounded-xl border border-slate-200 px-4 py-3 font-mono text-sm uppercase outline-none placeholder:text-slate-400 placeholder:normal-case focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="e.g. GATE-XXXXXX"
+                  value={manualCode}
+                  onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleManualScan(); }}
+                />
+                <button onClick={handleManualScan} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-black active:scale-95 transition-transform">
+                  Scan
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-400">Press Enter or click Scan · Code format: GATE-XXXXXX</p>
+              <div className="mt-3 text-center">
+                <button
+                  onClick={() => setUseManual(false)}
+                  className="text-xs text-blue-600 hover:underline font-medium"
+                >
+                  📷 Switch to camera scanner
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Lookup loading */}
+          {step === "lookup" && (
+            <div className="mt-4 flex flex-col items-center gap-2 py-3">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+              <p className="text-xs text-slate-500 font-medium">Looking up student…</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── STEP: FACE VERIFICATION ───────────────────────────────────── */}
+      {step === "face" && resolved && (
+        <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          {/* Student info card */}
+          <div className="mb-5 flex items-center gap-3 rounded-xl bg-blue-50 p-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
+              {resolved.name.charAt(0)}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">{resolved.name}</p>
+              <p className="text-xs text-slate-500">{resolved.email} · Code: {scannedCode}</p>
+            </div>
+          </div>
+
+          <FaceVerification
+            studentName={resolved.name}
+            studentPhotoUrl={resolved.photoUrl}
+            onResult={handleFaceResult}
+            onCancel={resetFlow}
           />
           <button onClick={handleScan} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-black">
             Check

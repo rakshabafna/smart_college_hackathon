@@ -28,17 +28,109 @@ export type Student = {
 export type HackathonMode = "Offline" | "Online" | "Hybrid";
 export type HackathonStatus = "Open" | "Coming soon" | "Closed";
 
+export type RoundType =
+    | "quiz"
+    | "resume_shortlisting"
+    | "ppt_shortlisting"
+    | "coding_challenge"
+    | "project_demo"
+    | "interview"
+    | "ideation"
+    | "prototype"
+    | "other";
+
+export type RoundConfig = {
+    id: string;
+    name: string;
+    type: RoundType;
+    mode: "online" | "offline";
+    date: string;
+    deadline: string;
+    description: string;
+};
+
+export type EvaluationCriterion = {
+    id: string;
+    name: string;
+    weight: number;
+    description: string;
+};
+
+export type ProblemStatementEntry = {
+    id: string;
+    title: string;
+    description: string;
+    track: string;
+};
+
+export type PrizeEntry = {
+    id: string;
+    title: string;       // e.g. "Grand Prize", "Best Student Team"
+    value: string;        // e.g. "₹1,00,000", "Swag Kit"
+    description: string;  // what the prize is for
+};
+
+export type FAQEntry = {
+    id: string;
+    question: string;
+    answer: string;
+};
+
+export type SponsorEntry = {
+    id: string;
+    name: string;
+    tier: "title" | "gold" | "silver" | "bronze" | "community";
+    logoPreview?: string; // base64 or URL
+    website?: string;
+};
+
 export type Hackathon = {
     id: string;           // slug
     title: string;
     tagline: string;
     theme: string;
+    description?: string;          // detailed about section
     mode: HackathonMode;
     status: HackathonStatus;
     startDate: string;
     endDate: string;
+    registrationDeadline?: string; // when registration closes
+    registrationFee?: string;      // e.g. "Free", "₹400", "₹500"
     location?: string;
+    venue?: string;
+    bannerPreview?: string;
+
+    // Organizer details
+    organizerName?: string;
+    organizerInstitution?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    websiteUrl?: string;
+    socialLinks?: {
+        instagram?: string;
+        linkedin?: string;
+        twitter?: string;
+        discord?: string;
+    };
+
+    // Eligibility & rules
+    eligibility?: string;          // who can participate
+    rules?: string;                // hackathon rules & guidelines
+
     problemStatements: string;
+    problemStatementEntries?: ProblemStatementEntry[];
+    psVisible?: boolean;           // whether PS are visible to students now or hidden until event day
+    rounds?: RoundConfig[];
+    minTeamSize?: number;
+    maxTeamSize?: number;
+    allowSolo?: boolean;
+    evaluationCriteria?: EvaluationCriterion[];
+
+    // Prizes, FAQs, Sponsors
+    prizes?: PrizeEntry[];
+    faqs?: FAQEntry[];
+    sponsors?: SponsorEntry[];
+
     enableVerification: boolean;
     enableQR: boolean;
     enableAI: boolean;

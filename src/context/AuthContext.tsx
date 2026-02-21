@@ -65,7 +65,6 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 // ─── Helper: Firestore profile ───────────────────────────────────────────────
 
 async function fetchProfile(uid: string): Promise<FSUser | null> {
-    if (!db) return null;
     const snap = await getDoc(doc(db, "users", uid));
     return snap.exists() ? (snap.data() as FSUser) : null;
 }
@@ -91,12 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<AppUser | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Listen to Firebase auth state (skip if Firebase failed to initialize)
+    // Listen to Firebase auth state
     useEffect(() => {
-        if (!auth) {
-            setLoading(false);
-            return;
-        }
         const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
             if (fbUser) {
                 const profile = await fetchProfile(fbUser.uid);
@@ -114,7 +109,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: string,
         password: string
     ): Promise<AppUser> => {
-        if (!auth) throw new Error("Firebase is not configured. Check your API key in .env.local");
         const cred = await signInWithEmailAndPassword(auth, email, password);
         const profile = await fetchProfile(cred.user.uid);
         const appUser = buildAppUser(cred.user, profile);
@@ -128,7 +122,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password: string,
         extra: { displayName: string; phone?: string; role: FSUser["role"] }
     ): Promise<AppUser> => {
-        if (!auth || !db) throw new Error("Firebase is not configured. Check your API key in .env.local");
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         const profile: FSUser = {
             uid: cred.user.uid,
@@ -148,7 +141,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // ── Sign out ──────────────────────────────────────────────────────────────
     const signOutFn = async () => {
-        if (!auth) return;
         await firebaseSignOut(auth);
         setUser(null);
     };
@@ -157,7 +149,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signInWithOAuthFn = async (
         provider: FirebaseAuthProvider
     ): Promise<{ appUser: AppUser; isNewUser: boolean }> => {
-        if (!auth || !db) throw new Error("Firebase is not configured. Check your API key in .env.local");
         const cred = await signInWithPopup(auth, provider);
         const existingProfile = await fetchProfile(cred.user.uid);
         let isNewUser = false;

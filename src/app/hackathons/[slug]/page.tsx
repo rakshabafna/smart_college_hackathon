@@ -1,5 +1,5 @@
 "use client";
-
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from "next/link";
 import { useEffect, useMemo, useState, use } from "react";
 import { useAuth } from "../../AuthContext";
@@ -35,6 +35,8 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
   const [steps, setSteps] = useState<Record<StepKey, boolean>>({ verification: false, registration: false, qr: false, final: false, ai: false });
   const [submitted, setSubmitted] = useState(false);
   const [registered, setRegistered] = useState(false);
+  const [showJoinedToast, setShowJoinedToast] = useState(false);
+  const searchParams = useSearchParams();
 
   const { user } = useAuth();
 
@@ -45,7 +47,15 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
     setRegistered(Store.isRegistered(slug));
     const key = `hs-app-submitted-${slug}`;
     if (typeof window !== "undefined") setSubmitted(!!window.localStorage.getItem(key));
-  }, [slug]);
+
+    if (searchParams.get("joined") === "true") {
+      setShowJoinedToast(true);
+      setTimeout(() => setShowJoinedToast(false), 5000);
+      // Clean URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
+    }
+  }, [slug, searchParams]);
 
   const toggleStep = (key: StepKey) => {
     const next = { ...steps, [key]: !steps[key] };
@@ -95,6 +105,24 @@ export default function HackathonDetail({ params }: { params: Promise<{ slug: st
 
   return (
     <div className="mx-auto max-w-6xl px-5 pb-16 pt-6 md:px-8">
+      {/* Joined Toast */}
+      {showJoinedToast && (
+        <div className="fixed bottom-8 left-1/2 z-[100] -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex items-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-white shadow-2xl ring-1 ring-white/10">
+            <span className="text-xl">🎉</span>
+            <div className="flex flex-col">
+              <p className="text-sm font-bold">Welcome to the team!</p>
+              <p className="text-[11px] text-slate-400">You have successfully joined via invite.</p>
+            </div>
+            <button
+              onClick={() => setShowJoinedToast(false)}
+              className="ml-4 rounded-full p-1 hover:bg-white/10"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       {/* Banner */}
       {hackathon.bannerPreview && (
         <div className="mb-6 overflow-hidden rounded-2xl">

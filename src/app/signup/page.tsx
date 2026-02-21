@@ -1,24 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { sendEmailVerification } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { useAuth } from "../AuthContext";
 import { googleProvider, githubProvider } from "../../lib/auth-providers";
+import { Store } from "../lib/store";
 
 type FormData = {
   name: string;
   email: string;
   phone: string;
+  role: "student" | "organiser";
   password: string;
   confirm: string;
 };
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signUpWithEmail, signInWithOAuth } = useAuth();
   const [firebaseError, setFirebaseError] = useState("");
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
@@ -34,16 +37,18 @@ export default function SignUpPage() {
   const onSubmit = async (data: FormData) => {
     setFirebaseError("");
     try {
-      await signUpWithEmail(data.email, data.password, {
+      const appUser = await signUpWithEmail(data.email, data.password, {
         displayName: data.name,
         phone: data.phone,
         role: "student",
       });
+      // Sync to local Store for team displays
+      Store.ensureStudent(appUser.uid, data.name, data.email);
       // Send Firebase email verification
-      if (auth.currentUser) {
+      if (auth && auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
       }
-      router.push("/student/verify");
+      router.push(data.role === "organiser" ? "/admin" : "/student/verify");
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Sign-up failed. Please try again.";
@@ -65,8 +70,13 @@ export default function SignUpPage() {
     setOauthLoading(providerType);
     try {
       const provider = providerType === "google" ? googleProvider : githubProvider;
-      const { isNewUser } = await signInWithOAuth(provider);
-      if (isNewUser) {
+      const { appUser, isNewUser } = await signInWithOAuth(provider);
+      // Sync to local Store
+      Store.ensureStudent(appUser.uid, appUser.displayName, appUser.email);
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        router.push(decodeURIComponent(redirect));
+      } else if (isNewUser) {
         router.push("/student/verification");
       } else {
         router.push("/");
@@ -206,6 +216,40 @@ export default function SignUpPage() {
             />
             {errors.phone && (
               <p className="mt-1 text-xs font-medium text-rose-600">{errors.phone.message}</p>
+            )}
+          </div>
+
+          {/* Role selector */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              I am signing up as
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: "student" as const, label: "🎓 Student", desc: "Participate in hackathons" },
+                { value: "organiser" as const, label: "🏢 Organiser", desc: "Create & manage hackathons" },
+              ].map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-center transition-all ${watch("role") === opt.value
+                    ? "border-blue-500 bg-blue-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                >
+                  <input
+                    type="radio"
+                    value={opt.value}
+                    className="sr-only"
+                    {...register("role", { required: "Please select a role." })}
+                  />
+                  <span className="text-xl">{opt.label.split(" ")[0]}</span>
+                  <span className="text-sm font-semibold text-slate-800">{opt.label.split(" ").slice(1).join(" ")}</span>
+                  <span className="text-[11px] text-slate-500">{opt.desc}</span>
+                </label>
+              ))}
+            </div>
+            {errors.role && (
+              <p className="mt-1 text-xs font-medium text-rose-600">{errors.role.message}</p>
             )}
           </div>
 

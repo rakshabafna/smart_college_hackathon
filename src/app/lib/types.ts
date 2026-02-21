@@ -1,5 +1,5 @@
 // ─── Roles ────────────────────────────────────────────────────────────────────
-export type Role = "student" | "judge" | "admin" | "scanner_gate" | "scanner_food";
+export type Role = "student" | "organiser";
 
 // ─── User / Auth ──────────────────────────────────────────────────────────────
 export type User = {
@@ -101,6 +101,9 @@ export type Hackathon = {
     endDate: string;
     registrationDeadline?: string; // when registration closes
     registrationFee?: string;      // e.g. "Free", "₹400", "₹500"
+    round1StartDate?: number;      // unix ms
+    round1Deadline?: number;       // unix ms
+    problemStatements?: string;
     location?: string;
     venue?: string;
     bannerPreview?: string;
@@ -122,7 +125,7 @@ export type Hackathon = {
     eligibility?: string;          // who can participate
     rules?: string;                // hackathon rules & guidelines
 
-    problemStatements: string;
+
     problemStatementEntries?: ProblemStatementEntry[];
     psVisible?: boolean;           // whether PS are visible to students now or hidden until event day
     rounds?: RoundConfig[];
@@ -169,6 +172,9 @@ export type Team = {
         final: boolean;
         ai: boolean;
     };
+    shortlisted: boolean;
+    rank: number | null;
+    notifiedAt: number | null;
 };
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────
@@ -203,3 +209,89 @@ export type ScanLog = {
 
 export type MealStatus = "Used" | "Pending" | "Upcoming";
 export type MealType = "Breakfast" | "Lunch" | "Dinner";
+
+// ─── Gate Entry Management ────────────────────────────────────────────────────
+export type GateEntryResult =
+    | "allowed"
+    | "blocked_duplicate"
+    | "blocked_unverified"
+    | "blocked_face_fail"
+    | "blocked_expired"
+    | "blocked_unknown";
+
+export type GateEntryLog = {
+    id: string;
+    studentId: string;
+    studentName: string;
+    hackathonId: string;
+    scannedCode: string;
+    faceVerified: boolean;
+    faceScore: number;
+    result: GateEntryResult;
+    timestamp: string;
+};
+
+export type GateEntryStats = {
+    totalScans: number;
+    uniqueEntries: number;
+    duplicatesBlocked: number;
+    faceFailures: number;
+};
+
+// ─── Certificates ─────────────────────────────────────────────────────────────
+export type CertificateType = "participation" | "winner" | "runner_up" | "shortlisted" | "special";
+
+export type Certificate = {
+    id: string;
+    studentId: string;
+    studentName: string;
+    hackathonId: string;
+    hackathonTitle: string;
+    type: CertificateType;
+    achievement: string;           // e.g. "1st Place", "Best Innovation Award"
+    teamName?: string;
+    verificationCode: string;      // unique code for QR verification
+    generatedAt: string;
+};
+
+// ─── Audit Logging ────────────────────────────────────────────────────────────
+export type AuditAction =
+    | "student_approved"
+    | "student_flagged"
+    | "gate_entry"
+    | "gate_blocked"
+    | "meal_scanned"
+    | "meal_blocked"
+    | "score_submitted"
+    | "team_shortlisted"
+    | "certificate_issued"
+    | "qr_regenerated"
+    | "hackathon_created"
+    | "meal_window_opened"
+    | "meal_window_closed";
+
+export type AuditLog = {
+    id: string;
+    action: AuditAction;
+    actorId: string;               // who performed the action
+    actorName: string;
+    targetId?: string;             // affected entity (student, team, etc.)
+    targetName?: string;
+    hackathonId?: string;
+    details?: string;              // extra context
+    timestamp: string;
+};
+
+// ─── Team Invites ─────────────────────────────────────────────────────────────
+export type InviteStatus = "pending" | "accepted" | "declined";
+
+export type TeamInvite = {
+    id: string;
+    teamId: string;
+    teamName: string;
+    hackathonId: string;
+    invitedBy: string;             // student ID of inviter
+    inviteeEmail: string;          // email of invitee
+    status: InviteStatus;
+    timestamp: string;
+};

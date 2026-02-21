@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Store } from "../../lib/store";
+import { Store, validateQRToken } from "../../lib/store";
 import type { MealType } from "../../lib/types";
+import HackathonSelector from "../../components/HackathonSelector";
+import AuthGuard from "../../components/AuthGuard";
+import QRScannerCamera from "../../components/QRScannerCamera";
 
 const MEALS: { type: MealType; window: string; emoji: string }[] = [
   { type: "Breakfast", window: "7:00–9:00 AM", emoji: "🍳" },
@@ -13,11 +16,21 @@ const MEALS: { type: MealType; window: string; emoji: string }[] = [
 type RedeemResult = "valid" | "already_used" | "outside_window" | "invalid" | null;
 
 export default function FoodScannerPage() {
+  return (
+    <AuthGuard role="organiser">
+      <FoodScannerContent />
+    </AuthGuard>
+  );
+}
+
+function FoodScannerContent() {
+  const [hackId, setHackId] = useState("campushack-2026");
   const [selectedMeal, setSelectedMeal] = useState<MealType>("Lunch");
   const [code, setCode] = useState("");
   const [result, setResult] = useState<RedeemResult>(null);
   const [lastScan, setLastScan] = useState<{ name: string; meal: string; time: string } | null>(null);
   const [stats, setStats] = useState({ breakfast: 0, lunch: 0, dinner: 0 });
+  const [cameraActive, setCameraActive] = useState(true);
 
   useEffect(() => { refreshStats(); }, []);
 
@@ -30,44 +43,105 @@ export default function FoodScannerPage() {
     });
   };
 
-  const handleRedeem = () => {
-    if (!code.trim()) return;
-    const stripped = code.trim().toUpperCase();
-    const mealType = selectedMeal.toLowerCase() as "breakfast" | "lunch" | "dinner";
-    const expectedPrefix = `MEAL-${selectedMeal.toUpperCase()}`;
+  const handleRedeem = (inputCode?: string) => {
+    const raw = (inputCode ?? code).trim().toUpperCase();
+    if (!raw) return;
 
-    if (!stripped.startsWith(expectedPrefix) && !stripped.startsWith("MEAL-")) {
+    const mealType = selectedMeal.toLowerCase() as "breakfast" | "lunch" | "dinner";
+    const expectedPrefix = `MEAL${selectedMeal.toUpperCase()}`;
+
+    // Validate token (signature + expiry)
+    const parsed = validateQRToken(raw);
+
+    if (parsed.expired) {
       setResult("invalid");
-      setLastScan({ name: "Unknown code", meal: selectedMeal, time: new Date().toLocaleTimeString() });
+      setLastScan({ name: "QR Expired — ask student to refresh", meal: selectedMeal, time: new Date().toLocaleTimeString() });
       setCode("");
       setTimeout(() => setResult(null), 4000);
       return;
     }
 
-    // Check if this code has already been redeemed
-    const alreadyUsed = Store.getScanLogs().some(
-      (l) => l.type === mealType && l.result === "valid"
+    // Validate that it's actually a meal QR and the prefix matches the selected meal
+    if (!parsed.valid) {
+      setResult("invalid");
+      setLastScan({ name: parsed.reason ?? "Invalid QR code", meal: selectedMeal, time: new Date().toLocaleTimeString() });
+      setCode("");
+      setTimeout(() => setResult(null), 4000);
+      return;
+    }
+
+    // Check prefix — must be a meal QR for the selected meal type
+    if (!parsed.prefix.startsWith("MEAL")) {
+      setResult("invalid");
+      setLastScan({ name: "Not a meal QR — this looks like a gate pass", meal: selectedMeal, time: new Date().toLocaleTimeString() });
+      setCode("");
+      setTimeout(() => setResult(null), 4000);
+      return;
+    }
+
+    if (parsed.prefix !== expectedPrefix && parsed.prefix !== "MEAL") {
+      setResult("invalid");
+      setLastScan({
+        name: `Wrong meal — this QR is for ${parsed.prefix.replace("MEAL", "")}`,
+        meal: selectedMeal,
+        time: new Date().toLocaleTimeString(),
+      });
+      setCode("");
+      setTimeout(() => setResult(null), 4000);
+      return;
+    }
+
+    // Extract student identity from token
+    const studentId = parsed.studentId;
+    const student = Store.getStudent(studentId) ?? Store.getStudentByEmail(studentId);
+    const studentName = student?.name ?? `Student (${studentId})`;
+
+    // Check if THIS STUDENT has already redeemed THIS MEAL for this hackathon
+    const alreadyUsed = Store.getScanLogs(hackId).some(
+      (l) => l.studentId === studentId && l.type === mealType && l.result === "valid"
     );
 
     if (alreadyUsed) {
       setResult("already_used");
-      const log = { id: `scan-${Date.now()}`, studentId: "demo", studentName: "Student", hackathonId: "campushack-2026", type: mealType, result: "already_used" as const, timestamp: new Date().toISOString() };
+      setLastScan({ name: studentName, meal: selectedMeal, time: new Date().toLocaleTimeString() });
+      const log = {
+        id: `scan-${Date.now()}`,
+        studentId,
+        studentName,
+        hackathonId: hackId,
+        type: mealType,
+        result: "already_used" as const,
+        timestamp: new Date().toISOString(),
+      };
       Store.addScanLog(log);
     } else {
       setResult("valid");
-      const students = Store.getStudents();
-      const student = students[0];
-      const name = student?.name ?? "Verified Student";
-      const log = { id: `scan-${Date.now()}`, studentId: student?.id ?? "demo", studentName: name, hackathonId: "campushack-2026", type: mealType, result: "valid" as const, timestamp: new Date().toISOString() };
+      const log = {
+        id: `scan-${Date.now()}`,
+        studentId,
+        studentName,
+        hackathonId: hackId,
+        type: mealType,
+        result: "valid" as const,
+        timestamp: new Date().toISOString(),
+      };
       Store.addScanLog(log);
-      setLastScan({ name, meal: selectedMeal, time: new Date().toLocaleTimeString() });
+      setLastScan({ name: studentName, meal: selectedMeal, time: new Date().toLocaleTimeString() });
     }
     refreshStats();
     setCode("");
     setTimeout(() => setResult(null), 4000);
   };
 
-  const recentLogs = Store.getScanLogs().filter((l) => ["breakfast", "lunch", "dinner"].includes(l.type)).slice(0, 8);
+  /** Called when the camera decodes a QR — auto-process it */
+  const handleCameraScan = (decodedText: string) => {
+    setCameraActive(false); // pause camera after scan
+    handleRedeem(decodedText);
+    // Re-activate camera after result clears
+    setTimeout(() => setCameraActive(true), 4500);
+  };
+
+  const recentLogs = Store.getScanLogs(hackId).filter((l) => ["breakfast", "lunch", "dinner"].includes(l.type)).slice(0, 8);
 
   const resultBg = result === "valid" ? "bg-emerald-500" : result === "already_used" ? "bg-amber-500" : result ? "bg-rose-500" : "";
   const resultLabel = result === "valid" ? `✅ ${selectedMeal} · Valid — Enjoy your meal!` :
@@ -108,10 +182,20 @@ export default function FoodScannerPage() {
         ))}
       </div>
 
-      {/* Scanner input */}
+      {/* Camera scanner */}
+      <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          📷 Camera Scanner — {selectedMeal}
+        </p>
+        <div className="flex justify-center">
+          <QRScannerCamera onScan={handleCameraScan} active={cameraActive} />
+        </div>
+      </div>
+
+      {/* Manual input fallback */}
       <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Scan {selectedMeal} QR code
+          ⌨️ Manual input — {selectedMeal}
         </p>
         <div className="flex gap-2">
           <input
@@ -121,18 +205,18 @@ export default function FoodScannerPage() {
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             onKeyDown={(e) => { if (e.key === "Enter") handleRedeem(); }}
           />
-          <button onClick={handleRedeem} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-black">
+          <button onClick={() => handleRedeem()} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-black">
             Redeem
           </button>
         </div>
-        <p className="mt-1.5 text-[11px] text-slate-400">Format: MEAL-{selectedMeal.toUpperCase()}-XXXXXX — Press Enter or click Redeem</p>
+        <p className="mt-1.5 text-[11px] text-slate-400">Paste or type full token, then press Enter or click Redeem</p>
       </div>
 
       {/* Result banner */}
       {result && (
         <div className={`mt-4 rounded-2xl ${resultBg} px-6 py-4 text-center transition-all`}>
           <p className="text-lg font-semibold text-white">{resultLabel}</p>
-          {lastScan && result === "valid" && (
+          {lastScan && (result === "valid" || result === "already_used") && (
             <p className="mt-1 text-sm text-white/80">{lastScan.name} · {lastScan.time}</p>
           )}
         </div>

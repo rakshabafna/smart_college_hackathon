@@ -4,40 +4,30 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
+import { Store } from "./lib/store";
 
 type NavItem = { href: string; label: string };
 
-type AppRole = "student" | "admin" | "organizer" | "judge" | "scanner_gate" | "scanner_food";
+type AppRole = "student" | "organiser";
 
-// Student sees: Home, Hackathons, My Verification, My QR Pass
-// Organizer (admin) sees: Home, Hackathons, Create Hackathon, Admin Dashboard
-// Judge / scanners: minimal (legacy access via direct URL)
 const NAV_BY_ROLE: Record<AppRole | "guest", NavItem[]> = {
   student: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
-    { href: "/student/verification", label: "Verification" },
-    { href: "/student/pass", label: "My QR Pass" },
+    { href: "/student/dashboard", label: "Dashboard" },
+    { href: "/student/team", label: "My Team" },
+    { href: "/student/pass", label: "QR Passes" },
+    { href: "/leaderboard", label: "Leaderboard" },
   ],
-  admin: [
+  organiser: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
-    { href: "/hackathons/create", label: "Create hackathon" },
-    { href: "/admin", label: "Dashboard" },
+    { href: "/admin", label: "Admin" },
+    { href: "/judge", label: "Judge" },
+    { href: "/scanner/gate", label: "Gate" },
+    { href: "/scanner/food", label: "Food" },
+    { href: "/leaderboard", label: "Leaderboard" },
   ],
-  organizer: [
-    { href: "/", label: "Home" },
-    { href: "/hackathons", label: "Hackathons" },
-    { href: "/hackathons/create", label: "Create hackathon" },
-    { href: "/admin", label: "Dashboard" },
-  ],
-  judge: [
-    { href: "/", label: "Home" },
-    { href: "/hackathons", label: "Hackathons" },
-    { href: "/judge", label: "Judging" },
-  ],
-  scanner_gate: [{ href: "/scanner/gate", label: "Gate Scanner" }],
-  scanner_food: [{ href: "/scanner/food", label: "Food Scanner" }],
   guest: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
@@ -46,20 +36,12 @@ const NAV_BY_ROLE: Record<AppRole | "guest", NavItem[]> = {
 
 const ROLE_LABELS: Record<AppRole, string> = {
   student: "Student",
-  judge: "Judge",
-  admin: "Organizer",
-  organizer: "Organizer",
-  scanner_gate: "Gate",
-  scanner_food: "Food",
+  organiser: "Organiser",
 };
 
 const ROLE_COLORS: Record<AppRole, string> = {
   student: "bg-blue-50 text-blue-700",
-  judge: "bg-violet-50 text-violet-700",
-  admin: "bg-emerald-50 text-emerald-700",
-  organizer: "bg-emerald-50 text-emerald-700",
-  scanner_gate: "bg-slate-900 text-white",
-  scanner_food: "bg-amber-50 text-amber-700",
+  organiser: "bg-emerald-50 text-emerald-700",
 };
 
 export default function Navbar() {
@@ -67,6 +49,8 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const [isShortlisted, setIsShortlisted] = useState(false);
+  const [inviteCount, setInviteCount] = useState(0);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -75,21 +59,40 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const navItems = user ? (NAV_BY_ROLE[user.role as AppRole] ?? NAV_BY_ROLE["guest"]) : NAV_BY_ROLE["guest"];
+  // Normalize role for backward compat (admin/organizer → organiser)
+  const rawRole = (user?.role ?? "guest") as string;
+  const effectiveRole: AppRole | "guest" = !user
+    ? "guest"
+    : (rawRole === "admin" || rawRole === "organizer" || rawRole === "organiser")
+      ? "organiser"
+      : "student";
+  const navItems = NAV_BY_ROLE[effectiveRole];
 
   const NavLinks = ({ onClick }: { onClick?: () => void }) => (
     <>
       {navItems.map((item) => {
         const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+        const showDot = item.label === "My Results" && isShortlisted;
         return (
           <Link
             key={item.href}
             href={item.href}
             onClick={onClick}
-            className={`rounded-full px-3 py-1 text-[0.85rem] transition-colors ${active ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+            className={`relative rounded-full px-3 py-1 text-[0.85rem] transition-colors ${active ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
               }`}
           >
             {item.label}
+            {item.label === "Invites" && inviteCount > 0 && (
+              <span className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {inviteCount}
+              </span>
+            )}
+            {showDot && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              </span>
+            )}
           </Link>
         );
       })}

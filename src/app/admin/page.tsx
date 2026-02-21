@@ -2,18 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { Store, calcWeightedScore } from "../lib/store";
-import type { Student, Team, ScoreEntry } from "../lib/types";
+import type { Student, Team, ScoreEntry, AuditLog } from "../lib/types";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
+import HackathonSelector from "../components/HackathonSelector";
+import AuthGuard from "../components/AuthGuard";
 
-type AdminTab = "verification" | "qr" | "ppt" | "ranking" | "attendance" | "meals" | "sponsors";
+type AdminTab = "verification" | "qr" | "ppt" | "ranking" | "attendance" | "meals" | "sponsors" | "audit" | "certificates";
 
 export default function AdminPage() {
+  return (
+    <AuthGuard role="organiser">
+      <AdminContent />
+    </AuthGuard>
+  );
+}
+
+function AdminContent() {
   const [tab, setTab] = useState<AdminTab>("verification");
   const [students, setStudents] = useState<Student[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [scores, setScores] = useState<ScoreEntry[]>([]);
   const [toast, setToast] = useState<{ msg: string; tone: "emerald" | "amber" | "rose" } | null>(null);
+  const [rankInputs, setRankInputs] = useState<Record<string, number>>({});
+  const [notifyingTeams, setNotifyingTeams] = useState<Set<string>>(new Set());
 
   const [mealControl, setMealControl] = useState<Record<"Breakfast" | "Lunch" | "Dinner", "closed" | "open" | "done">>({
     Breakfast: "closed", Lunch: "closed", Dinner: "closed",
@@ -31,12 +43,52 @@ export default function AdminPage() {
   const approve = (id: string) => { Store.approveStudent(id); refresh(); setToast({ msg: "Student approved ✓", tone: "emerald" }); };
   const flag = (id: string) => { Store.flagStudent(id); refresh(); setToast({ msg: "Student flagged ⚠", tone: "amber" }); };
 
+  const handleNotify = async (teamId: string) => {
+    const team = Store.getTeam(teamId);
+    if (!team) return;
+    const hackathon = Store.getHackathon(team.hackathonId);
+    const allStudents = Store.getStudents();
+    const memberIds = [...(team.memberIds ?? []), ...(team.members ?? [])].filter((v, i, a) => a.indexOf(v) === i);
+    const emails = memberIds.map((id) => allStudents.find((s) => s.id === id)?.email).filter(Boolean) as string[];
+
+    if (emails.length === 0) {
+      setToast({ msg: "No member emails found for this team.", tone: "amber" });
+      return;
+    }
+
+    setNotifyingTeams((prev) => new Set(prev).add(teamId));
+    try {
+      const res = await fetch("/api/notify-shortlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emails,
+          teamName: team.name || "Unnamed Team",
+          rank: team.rank ?? 0,
+          hackathonTitle: hackathon?.title ?? "Hackathon",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        Store.markNotified(teamId);
+        refresh();
+        setToast({ msg: `Team "${team.name}" notified via email ✓`, tone: "emerald" });
+      } else {
+        setToast({ msg: data.error || "Failed to send notification.", tone: "rose" });
+      }
+    } catch {
+      setToast({ msg: "Network error — could not send notification.", tone: "rose" });
+    } finally {
+      setNotifyingTeams((prev) => { const next = new Set(prev); next.delete(teamId); return next; });
+    }
+  };
+
   const shortlistTop40 = () => {
     const sorted = [...scores].sort((a, b) => b.weightedScore - a.weightedScore);
     const cutoff = Math.ceil(sorted.length * 0.4);
-    sorted.slice(0, cutoff).forEach((s) => Store.shortlistTeam(s.teamId, "round1"));
+    sorted.slice(0, cutoff).forEach((s, i) => Store.shortlistTeam(s.teamId, i + 1));
     refresh();
-    setToast({ msg: `Top ${cutoff} teams shortlisted! Notifications sent.`, tone: "emerald" });
+    setToast({ msg: `Top ${cutoff} teams shortlisted with ranks! Notifications sent.`, tone: "emerald" });
   };
 
   const exportReport = () => {
@@ -75,6 +127,8 @@ export default function AdminPage() {
     { key: "ranking", label: "Live ranking", emoji: "🏆" },
     { key: "attendance", label: "Attendance", emoji: "📋" },
     { key: "sponsors", label: "Sponsors", emoji: "💼" },
+    { key: "audit", label: "Audit Logs", emoji: "📜" },
+    { key: "certificates", label: "Certificates", emoji: "🏅" },
   ];
 
   return (
@@ -194,83 +248,260 @@ export default function AdminPage() {
       )}
 
       {/* ── PPT tab ── */}
-      {tab === "ppt" && (
+      {tab === "ppt" && (() => {
+        const sortedTeams = [...teams].sort((a, b) => {
+          const aSubmitted = a.submissionStatus === "submitted" && a.round1SubmissionUrl ? 1 : 0;
+          const bSubmitted = b.submissionStatus === "submitted" && b.round1SubmissionUrl ? 1 : 0;
+          return bSubmitted - aSubmitted;
+        });
+        return (
+          <section className="space-y-6">
+            {/* ── Submissions overview ── */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-slate-700">Team Submissions</p>
+                <div className="flex gap-2 text-xs">
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
+                    {teams.filter((t) => t.submissionStatus === "submitted" && t.round1SubmissionUrl).length} submitted
+                  </span>
+                  <span className="rounded-full bg-amber-50 px-3 py-1 font-semibold text-amber-700">
+                    {teams.filter((t) => t.submissionStatus !== "submitted" || !t.round1SubmissionUrl).length} pending
+                  </span>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[10px] uppercase text-slate-400">
+                      <th className="px-4 py-3 text-left">Team</th>
+                      <th className="px-4 py-3 text-center">Members</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Submitted at</th>
+                      <th className="px-4 py-3 text-left">PPT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedTeams.map((team) => {
+                      const isSubmitted = team.submissionStatus === "submitted" && team.round1SubmissionUrl;
+                      return (
+                        <tr key={team.id} className={`border-b border-slate-50 last:border-0 ${isSubmitted ? "bg-emerald-50/30" : ""}`}>
+                          <td className="px-4 py-3 font-semibold text-slate-900">{team.name || "Unnamed"}</td>
+                          <td className="px-4 py-3 text-center text-slate-600">{team.members?.length ?? 0}</td>
+                          <td className="px-4 py-3">
+                            <StatusBadge
+                              label={isSubmitted ? "Submitted" : "Pending"}
+                              tone={isSubmitted ? "emerald" : "amber"}
+                              dot
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-slate-500">
+                            {team.submissionLockedAt
+                              ? new Date(team.submissionLockedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            {team.round1SubmissionUrl ? (
+                              <a
+                                href={team.round1SubmissionUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                              >
+                                View PPT ↗
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {teams.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400">No teams registered yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ── Evaluation matrix ── */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-slate-700">Round 1 — Evaluation matrix</p>
+                <button onClick={shortlistTop40} className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-700">🏆 Shortlist top 40%</button>
+              </div>
+              <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[10px] uppercase text-slate-400">
+                      <th className="px-4 py-3 text-left">Team</th>
+                      <th className="px-4 py-3 text-center">🚀 Innovation</th>
+                      <th className="px-4 py-3 text-center">🔧 Feasibility</th>
+                      <th className="px-4 py-3 text-center">💻 Tech depth</th>
+                      <th className="px-4 py-3 text-center">📊 Presentation</th>
+                      <th className="px-4 py-3 text-center">🌍 Impact</th>
+                      <th className="px-4 py-3 text-center font-semibold text-slate-700">Score</th>
+                      <th className="px-4 py-3 text-left">List</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teams.map((team) => {
+                      const s = scores.find((sc) => sc.teamId === team.id && sc.round === "round1");
+                      return (
+                        <tr key={team.id} className={`border-b border-slate-50 last:border-0 ${s?.shortlisted ? "bg-blue-50/40" : ""}`}>
+                          <td className="px-4 py-3 font-semibold text-slate-900">{team.name}</td>
+                          {(["innovation", "feasibility", "techDepth", "presentation", "socialImpact"] as const).map((field) => (
+                            <td key={field} className="px-4 py-3 text-center font-mono text-slate-700">
+                              {s ? s[field] : "—"}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-center">
+                            <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${(s?.weightedScore ?? 0) >= 80 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                              {s ? s.weightedScore : "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge label={s?.shortlisted ? "Shortlisted" : "Pending"} tone={s?.shortlisted ? "blue" : "default"} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-600">
+              <p className="font-semibold mb-1">Weights:</p>
+              <p>Innovation 25% · Feasibility 20% · Tech depth 30% · Presentation 15% · Social impact 10%</p>
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* ── Ranking tab ── */}
+      {tab === "ranking" && (
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-slate-700">Round 1 — Evaluation matrix</p>
-            <button onClick={shortlistTop40} className="rounded-full bg-blue-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-blue-700">🏆 Shortlist top 40%</button>
+          {/* Stats + bulk action */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-3">
+              <Stat label="Total teams" value={teams.length} />
+              <Stat label="Shortlisted" value={teams.filter((t) => t.shortlisted).length} tone="emerald" />
+              <Stat label="Scored" value={ranked.length} />
+            </div>
+            <button
+              onClick={shortlistTop40}
+              className="rounded-full bg-blue-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700"
+            >
+              🏆 Shortlist top 40%
+            </button>
           </div>
+
+          {/* Rankings list */}
           <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase text-slate-400">
+                  <th className="px-4 py-3 text-center w-12">#</th>
                   <th className="px-4 py-3 text-left">Team</th>
-                  <th className="px-4 py-3 text-center">🚀 Innovation</th>
-                  <th className="px-4 py-3 text-center">🔧 Feasibility</th>
-                  <th className="px-4 py-3 text-center">💻 Tech depth</th>
-                  <th className="px-4 py-3 text-center">📊 Presentation</th>
-                  <th className="px-4 py-3 text-center">🌍 Impact</th>
-                  <th className="px-4 py-3 text-center font-semibold text-slate-700">Score</th>
-                  <th className="px-4 py-3 text-left">List</th>
+                  <th className="px-4 py-3 text-center">Score</th>
+                  <th className="px-4 py-3 text-center w-20">Rank</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {teams.map((team) => {
-                  const s = scores.find((sc) => sc.teamId === team.id && sc.round === "round1");
+                {ranked.map((s, i) => {
+                  const team = teams.find((t) => t.id === s.teamId);
+                  const isShortlisted = team?.shortlisted === true;
                   return (
-                    <tr key={team.id} className={`border-b border-slate-50 last:border-0 ${s?.shortlisted ? "bg-blue-50/40" : ""}`}>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{team.name}</td>
-                      {(["innovation", "feasibility", "techDepth", "presentation", "socialImpact"] as const).map((field) => (
-                        <td key={field} className="px-4 py-3 text-center font-mono text-slate-700">
-                          {s ? s[field] : "—"}
-                        </td>
-                      ))}
+                    <tr key={s.id} className={`border-b border-slate-50 last:border-0 transition-colors ${isShortlisted ? "bg-emerald-50/40" : ""}`}>
                       <td className="px-4 py-3 text-center">
-                        <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${(s?.weightedScore ?? 0) >= 80 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
-                          {s ? s.weightedScore : "—"}
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${i === 0 ? "bg-yellow-400 text-slate-900" : i === 1 ? "bg-slate-200 text-slate-700" : i === 2 ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-700"}`}>
+                          {i + 1}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge label={s?.shortlisted ? "Shortlisted" : "Pending"} tone={s?.shortlisted ? "blue" : "default"} />
+                        <p className="font-semibold text-slate-900">{team?.name ?? s.teamId}</p>
+                        <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{team?.problemStatement?.slice(0, 50)}</p>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${s.weightedScore >= 80 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                          {s.weightedScore}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {isShortlisted ? (
+                          <span className="text-sm font-bold text-emerald-700">#{team?.rank}</span>
+                        ) : (
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="#"
+                            value={rankInputs[s.teamId] ?? ""}
+                            onChange={(e) => setRankInputs((prev) => ({ ...prev, [s.teamId]: parseInt(e.target.value) || 0 }))}
+                            className="w-14 rounded-lg border border-slate-200 px-2 py-1 text-center text-xs font-mono focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                          />
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isShortlisted ? (
+                          <StatusBadge label="Shortlisted" tone="emerald" dot />
+                        ) : (
+                          <StatusBadge label="Pending" tone="default" />
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isShortlisted ? (
+                          team?.notifiedAt ? (
+                            <button
+                              disabled
+                              className="rounded-full bg-slate-200 px-3 py-1 text-[11px] font-bold text-slate-500 cursor-not-allowed"
+                            >
+                              Notified ✓
+                            </button>
+                          ) : notifyingTeams.has(s.teamId) ? (
+                            <button
+                              disabled
+                              className="rounded-full bg-emerald-400 px-3 py-1 text-[11px] font-bold text-white cursor-wait"
+                            >
+                              Sending…
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleNotify(s.teamId)}
+                              className="rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-emerald-700 transition-colors"
+                            >
+                              Notify →
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const rank = rankInputs[s.teamId] || (i + 1);
+                              Store.shortlistTeam(s.teamId, rank);
+                              refresh();
+                              setToast({ msg: `${team?.name ?? "Team"} shortlisted at rank #${rank} ✓`, tone: "emerald" });
+                            }}
+                            className="rounded-full bg-blue-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-blue-700 transition-colors"
+                          >
+                            Shortlist ✓
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
+                {ranked.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">No scores submitted yet.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
+
           <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-600">
-            <p className="font-semibold mb-1">Weights:</p>
+            <p className="font-semibold mb-1">Scoring weights:</p>
             <p>Innovation 25% · Feasibility 20% · Tech depth 30% · Presentation 15% · Social impact 10%</p>
           </div>
-        </section>
-      )}
-
-      {/* ── Ranking tab ── */}
-      {tab === "ranking" && (
-        <section>
-          <ol className="space-y-3">
-            {ranked.map((s, i) => {
-              const team = teams.find((t) => t.id === s.teamId);
-              return (
-                <li key={s.id} className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${i === 0 ? "bg-yellow-400 text-slate-900" : i === 1 ? "bg-slate-200 text-slate-700" : i === 2 ? "bg-amber-600 text-white" : "bg-slate-100 text-slate-700"}`}>
-                    {i + 1}
-                  </span>
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-900">{team?.name ?? s.teamId}</p>
-                    <p className="text-xs text-slate-500">{team?.problemStatement?.slice(0, 60)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-semibold text-slate-900">{s.weightedScore}</p>
-                    <p className="text-[11px] text-slate-400">Weighted score / 100</p>
-                  </div>
-                  {s.shortlisted && <StatusBadge label="Shortlisted" tone="blue" dot />}
-                </li>
-              );
-            })}
-            {ranked.length === 0 && <p className="py-8 text-center text-xs text-slate-400">No scores submitted yet.</p>}
-          </ol>
         </section>
       )}
 
@@ -428,6 +659,38 @@ export default function AdminPage() {
           </div>
         </section>
       )}
+
+      {/* ── Audit Logs tab ── */}
+      {tab === "audit" && (
+        <AuditLogTab hackId={hackId} />
+      )}
+
+      {/* ── Certificates tab ── */}
+      {tab === "certificates" && (
+        <section className="space-y-4">
+          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+            <h2 className="text-lg font-semibold text-slate-900 mb-2">Certificate Management</h2>
+            <p className="text-sm text-slate-600 mb-4">
+              Generate, view, and manage certificates for all participants and winners.
+            </p>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
+              <Stat label="Total Certs" value={Store.getCertificates(hackId).length} />
+              <Stat label="Winners" value={Store.getCertificates(hackId).filter(c => c.type === "winner").length} tone="amber" />
+              <Stat label="Runners Up" value={Store.getCertificates(hackId).filter(c => c.type === "runner_up").length} />
+              <Stat label="Participation" value={Store.getCertificates(hackId).filter(c => c.type === "participation").length} tone="emerald" />
+            </div>
+            <a
+              href="/admin/certificates"
+              className="inline-flex rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-all"
+            >
+              🏅 Open Certificate Generator →
+            </a>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+            <p>Students and anyone can verify certificates at <a href="/certificates/verify" className="font-semibold text-blue-600 underline">/certificates/verify</a></p>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -439,5 +702,83 @@ function Stat({ label, value, tone }: { label: string; value: number | string; t
       <p className="text-[10px] font-semibold uppercase text-slate-400">{label}</p>
       <p className={`mt-1 text-2xl font-semibold ${tone ? colors[tone] : "text-slate-900"}`}>{value}</p>
     </div>
+  );
+}
+
+function AuditLogTab({ hackId }: { hackId: string }) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [filter, setFilter] = useState<string>("all");
+
+  useEffect(() => {
+    setLogs(Store.getAuditLogs(hackId));
+  }, [hackId]);
+
+  const filtered = filter === "all" ? logs : logs.filter((l) => l.action === filter);
+
+  const actionLabels: Record<string, { text: string; color: string }> = {
+    student_approved: { text: "✓ Approved", color: "bg-emerald-50 text-emerald-700" },
+    student_flagged: { text: "⚠ Flagged", color: "bg-amber-50 text-amber-700" },
+    gate_entry: { text: "🚪 Gate Entry", color: "bg-blue-50 text-blue-700" },
+    gate_blocked: { text: "🚫 Gate Blocked", color: "bg-rose-50 text-rose-700" },
+    meal_scanned: { text: "🍽️ Meal Scan", color: "bg-emerald-50 text-emerald-700" },
+    meal_blocked: { text: "🍽️ Meal Blocked", color: "bg-rose-50 text-rose-700" },
+    score_submitted: { text: "📊 Score", color: "bg-violet-50 text-violet-700" },
+    team_shortlisted: { text: "✓ Shortlisted", color: "bg-emerald-50 text-emerald-700" },
+    certificate_issued: { text: "🏅 Certificate", color: "bg-amber-50 text-amber-700" },
+    hackathon_created: { text: "🚀 Created", color: "bg-blue-50 text-blue-700" },
+    meal_window_opened: { text: "🟢 Meal Open", color: "bg-emerald-50 text-emerald-700" },
+    meal_window_closed: { text: "🔴 Meal Close", color: "bg-slate-100 text-slate-700" },
+  };
+
+  const uniqueActions = [...new Set(logs.map((l) => l.action))];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-900">Audit Trail</h2>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500"
+        >
+          <option value="all">All Actions ({logs.length})</option>
+          {uniqueActions.map((a) => (
+            <option key={a} value={a}>{actionLabels[a]?.text ?? a}</option>
+          ))}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-2xl bg-slate-50 p-8 text-center">
+          <p className="text-3xl mb-2">📜</p>
+          <p className="text-sm font-medium text-slate-600">No audit logs yet.</p>
+          <p className="text-xs text-slate-400 mt-1">Actions will be logged as events occur.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5 max-h-[500px] overflow-y-auto">
+          {filtered.map((log) => {
+            const al = actionLabels[log.action] ?? { text: log.action, color: "bg-slate-100 text-slate-700" };
+            const time = new Date(log.timestamp);
+            return (
+              <div key={log.id} className="flex items-start gap-3 rounded-xl bg-white px-4 py-3 ring-1 ring-slate-100">
+                <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${al.color}`}>
+                  {al.text}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-800 truncate">
+                    <strong>{log.actorName}</strong>
+                    {log.targetName && <> → {log.targetName}</>}
+                  </p>
+                  {log.details && <p className="text-xs text-slate-500 truncate">{log.details}</p>}
+                </div>
+                <p className="text-[10px] text-slate-400 shrink-0">
+                  {time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

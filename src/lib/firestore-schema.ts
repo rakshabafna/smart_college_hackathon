@@ -5,7 +5,7 @@ export interface FSUser {
     uid: string;
     email: string;
     phone: string;
-    role: "student" | "admin" | "organizer";
+    role: "student" | "organiser";
     status: "pending" | "verified" | "rejected" | "suspended";
     authProvider: "email" | "google" | "github";
     displayName?: string;

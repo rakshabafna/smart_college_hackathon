@@ -16,12 +16,12 @@ type FormData = {
 /** Decide where to redirect based on role */
 function dashboardFor(role: string): string {
   switch (role) {
+    case "organiser":
+    case "organizer": // backward compat
     case "admin":
       return "/admin";
-    case "organizer":
-      return "/admin";
     default:
-      return "/student/verification";
+      return "/student/dashboard";
   }
 }
 

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Store, parseStudentIdFromToken } from "../../lib/store";
+import { Store, validateQRToken } from "../../lib/store";
 import type { GateEntryLog, GateEntryResult, GateEntryStats } from "../../lib/types";
 import QRScannerCamera from "../../components/QRScannerCamera";
 import FaceVerification from "../../components/FaceVerification";
 import HackathonSelector from "../../components/HackathonSelector";
+import AuthGuard from "../../components/AuthGuard";
 
 type ScanResult = "allowed" | "blocked_duplicate" | "blocked_unknown" | null;
 
@@ -18,7 +19,43 @@ type ResolvedStudent = {
   verified: boolean;
 };
 
-  useEffect(() => { refreshLogs(); }, []);
+/* ─── Result banner config ─────────────────────────────────────────────────── */
+const RESULT_CONFIG: Record<GateEntryResult, { bg: string; icon: string; label: string }> = {
+  allowed: { bg: "from-emerald-500 to-emerald-600", icon: "✅", label: "Entry Allowed" },
+  blocked_duplicate: { bg: "from-amber-500 to-orange-500", icon: "🔁", label: "Already Entered — Duplicate Blocked" },
+  blocked_unverified: { bg: "from-rose-500 to-rose-600", icon: "🚫", label: "Not Verified — Entry Denied" },
+  blocked_face_fail: { bg: "from-rose-500 to-rose-600", icon: "❌", label: "Face Mismatch — Entry Denied" },
+  blocked_expired: { bg: "from-red-600 to-red-700", icon: "⏰", label: "QR Expired — Ask Student to Refresh" },
+  blocked_unknown: { bg: "from-slate-600 to-slate-700", icon: "❓", label: "Invalid QR Code" },
+};
+
+export default function GateEntryPage() {
+  return (
+    <AuthGuard role="organiser">
+      <GateEntryContent />
+    </AuthGuard>
+  );
+}
+
+function GateEntryContent() {
+  const [step, setStep] = useState<Step>("scan");
+  const [hackId, setHackId] = useState("campushack-2026");
+  const [scannedCode, setScannedCode] = useState("");
+  const [manualCode, setManualCode] = useState("");
+  const [resolved, setResolved] = useState<ResolvedStudent | null>(null);
+  const [entryResult, setEntryResult] = useState<GateEntryResult | null>(null);
+  const [faceScore, setFaceScore] = useState(0);
+  const [logs, setLogs] = useState<GateEntryLog[]>([]);
+  const [stats, setStats] = useState<GateEntryStats>({ totalScans: 0, uniqueEntries: 0, duplicatesBlocked: 0, faceFailures: 0 });
+  const [scannerActive, setScannerActive] = useState(true);
+  const [useManual, setUseManual] = useState(false);
+
+  const refreshData = useCallback(() => {
+    setLogs(Store.getGateEntries(hackId).slice(0, 15));
+    setStats(Store.getGateStats(hackId));
+  }, [hackId]);
+
+  useEffect(() => { refreshData(); }, [refreshData]);
 
   const refreshLogs = () => {
     const all = Store.getScanLogs().filter((l) => l.type === "gate");
@@ -54,27 +91,81 @@ type ResolvedStudent = {
       return;
     }
 
-    // Parse student ID from QR code (format: GATE-{studentId}-{hash})
-    const studentId = parseStudentIdFromToken(stripped);
-    const allStudents = Store.getStudents();
-    const approved = allStudents.filter((s) => s.verificationStatus === "approved");
+    // ── Validate token (signature + expiry) ──────────────────────────────
+    const parsed = validateQRToken(stripped);
 
-    // Try direct ID lookup first, then fall back to hash-based for short codes (e.g. GATE-ABCDEF)
-    let student = studentId
-      ? allStudents.find((s) => s.id.toLowerCase() === studentId.toLowerCase())
-      : null;
-
-    if (!student && approved.length > 0) {
-      // Fallback: hash the code to pick an approved student
-      const codeHash = stripped.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-      student = approved[codeHash % approved.length];
-    }
-
-    if (!student) {
-      // No approved students at all
+    // Expired QR?
+    if (parsed.expired) {
       const entry: GateEntryLog = {
         id: `ge-${Date.now()}`,
-        studentId: studentId ?? "unknown",
+        studentId: parsed.studentId || "unknown",
+        studentName: "Unknown",
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_expired",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_expired");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    // Invalid signature or bad format?
+    if (!parsed.valid) {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: parsed.studentId || "unknown",
+        studentName: "Unknown",
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_unknown",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_unknown");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    // Wrong hackathon? (compare sanitized IDs)
+    const currentHackShort = hackId.replace(/-/g, "").toUpperCase();
+    if (parsed.hackathonId.toUpperCase() !== currentHackShort) {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: parsed.studentId,
+        studentName: "Unknown",
+        hackathonId: hackId,
+        scannedCode: stripped,
+        faceVerified: false,
+        faceScore: 0,
+        result: "blocked_unknown",
+        timestamp: new Date().toISOString(),
+      };
+      Store.addGateEntry(entry);
+      setEntryResult("blocked_unknown");
+      setStep("result");
+      refreshData();
+      return;
+    }
+
+    // ── Student lookup ───────────────────────────────────────────────────
+    const studentId = parsed.studentId;
+    const allStudents = Store.getStudents();
+    const student = allStudents.find(
+      (s) => s.id.toLowerCase() === studentId.toLowerCase() || s.email.toLowerCase() === studentId.toLowerCase()
+    );
+
+    if (!student) {
+      const entry: GateEntryLog = {
+        id: `ge-${Date.now()}`,
+        studentId: studentId,
         studentName: "Unknown Student",
         hackathonId: hackId,
         scannedCode: stripped,
@@ -152,7 +243,7 @@ type ResolvedStudent = {
       id: `ge-${Date.now()}`,
       studentId: resolved?.id ?? "unknown",
       studentName: resolved?.name ?? "Unknown",
-      hackathonId: "campushack-2026",
+      hackathonId: hackId,
       scannedCode,
       faceVerified: verified,
       faceScore: score,
@@ -329,17 +420,44 @@ type ResolvedStudent = {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log) => (
-                  <tr key={log.id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-3 py-2 font-medium text-slate-800">{log.studentName}</td>
-                    <td className="px-3 py-2 text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                    <td className="px-3 py-2">
-                      <span className={`rounded-full px-2 py-0.5 font-semibold ${log.result === "allowed" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
-                        {log.result === "allowed" ? "Allowed" : "Blocked"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {logs.map((log) => {
+                  const resultColors: Record<GateEntryResult, string> = {
+                    allowed: "bg-emerald-50 text-emerald-700",
+                    blocked_duplicate: "bg-amber-50 text-amber-700",
+                    blocked_unverified: "bg-rose-50 text-rose-700",
+                    blocked_face_fail: "bg-rose-50 text-rose-700",
+                    blocked_expired: "bg-red-100 text-red-700",
+                    blocked_unknown: "bg-slate-100 text-slate-600",
+                  };
+                  const resultLabels: Record<GateEntryResult, string> = {
+                    allowed: "Allowed",
+                    blocked_duplicate: "Duplicate",
+                    blocked_unverified: "Unverified",
+                    blocked_face_fail: "Face fail",
+                    blocked_expired: "Expired",
+                    blocked_unknown: "Invalid",
+                  };
+                  return (
+                    <tr key={log.id} className="border-b border-slate-50 last:border-0">
+                      <td className="px-3 py-2 font-medium text-slate-800">{log.studentName}</td>
+                      <td className="px-3 py-2 text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                      <td className="px-3 py-2">
+                        {log.faceScore > 0 ? (
+                          <span className={`font-semibold ${log.faceVerified ? "text-emerald-600" : "text-rose-600"}`}>
+                            {log.faceScore}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`rounded-full px-2 py-0.5 font-semibold ${resultColors[log.result]}`}>
+                          {resultLabels[log.result]}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

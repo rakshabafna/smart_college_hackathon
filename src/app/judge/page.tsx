@@ -5,6 +5,8 @@ import { Store, calcWeightedScore } from "../lib/store";
 import type { Team, ScoreEntry } from "../lib/types";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
+import HackathonSelector from "../components/HackathonSelector";
+import AuthGuard from "../components/AuthGuard";
 
 type JudgeTab = "round1" | "final";
 
@@ -22,6 +24,14 @@ const CRITERIA = [
 type Scores = { innovation: number; feasibility: number; techDepth: number; presentation: number; socialImpact: number };
 
 export default function JudgePage() {
+  return (
+    <AuthGuard role="organiser">
+      <JudgeContent />
+    </AuthGuard>
+  );
+}
+
+function JudgeContent() {
   const [tab, setTab] = useState<JudgeTab>("round1");
   const [teams, setTeams] = useState<Team[]>([]);
   const [scores, setScores] = useState<ScoreEntry[]>([]);

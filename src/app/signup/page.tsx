@@ -14,6 +14,7 @@ type FormData = {
   name: string;
   email: string;
   phone: string;
+  role: "student" | "organiser";
   password: string;
   confirm: string;
 };
@@ -47,12 +48,7 @@ export default function SignUpPage() {
       if (auth && auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
       }
-      const redirect = searchParams.get('redirect');
-      if (redirect) {
-        router.push(decodeURIComponent(redirect));
-      } else {
-        router.push(data.role === "organizer" ? "/admin" : "/student/verify");
-      }
+      router.push(data.role === "organiser" ? "/admin" : "/student/verify");
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Sign-up failed. Please try again.";
@@ -231,7 +227,7 @@ export default function SignUpPage() {
             <div className="grid grid-cols-2 gap-2">
               {[
                 { value: "student" as const, label: "🎓 Student", desc: "Participate in hackathons" },
-                { value: "organizer" as const, label: "🏢 Organiser", desc: "Create & manage hackathons" },
+                { value: "organiser" as const, label: "🏢 Organiser", desc: "Create & manage hackathons" },
               ].map((opt) => (
                 <label
                   key={opt.value}

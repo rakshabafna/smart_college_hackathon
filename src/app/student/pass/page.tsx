@@ -34,11 +34,10 @@ export default function StudentPassPage() {
     return () => clearInterval(id);
   }, []);
 
-  const initialSeed = Math.floor(Date.now() / 30000);
-  const gateToken = user ? generateQRToken("GATE", user.id, initialSeed) : "";
+  const gateToken = user ? generateQRToken("GATE", user.id, 0, hackId) : "";
 
-  const mealToken = (type: MealType, seed: number) =>
-    user ? generateQRToken(`MEAL-${type.toUpperCase()}`, user.id, seed) : "";
+  const mealToken = (type: MealType) =>
+    user ? generateQRToken(`MEAL${type.toUpperCase()}`, user.id, 0, hackId) : "";
 
   if (!user) {
     return (
@@ -75,7 +74,7 @@ export default function StudentPassPage() {
               label="Gate Entry"
               refreshSeconds={30}
               size={180}
-              generateToken={(seed) => generateQRToken("GATE", user.id, seed)}
+              generateToken={() => generateQRToken("GATE", user.id, 0, hackId)}
             />
           </div>
           <p className="mt-3 text-center text-[11px] text-slate-500">
@@ -92,7 +91,6 @@ export default function StudentPassPage() {
 
           {MEALS.map((meal, i) => {
             const status: MealControlStatus = mealControl[meal.type];
-            const seed = Math.floor(Date.now() / 30000) + i;
 
             return (
               <div
@@ -126,11 +124,11 @@ export default function StudentPassPage() {
                 {status === "open" && (
                   <div className="mt-4 flex justify-center">
                     <QRDisplay
-                      token={mealToken(meal.type, seed)}
+                      token={mealToken(meal.type)}
                       label={meal.label}
                       refreshSeconds={30}
                       size={150}
-                      generateToken={(newSeed) => mealToken(meal.type, newSeed)}
+                      generateToken={() => mealToken(meal.type)}
                     />
                   </div>
                 )}

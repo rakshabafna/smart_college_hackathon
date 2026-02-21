@@ -23,7 +23,7 @@ export default function StudentPassPage() {
     Dinner: "closed",
   });
 
-  // Poll meal control state every 5 seconds so student sees real-time updates when organizer opens a meal
+  // Poll meal control state every 5 seconds
   useEffect(() => {
     const refresh = () => {
       const ctrl = Store.getMealControl();

@@ -21,6 +21,10 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProblemId, setSelectedProblemId] = useState("");
   const [, setInvitesVersion] = useState(0);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [sentInvites, setSentInvites] = useState<string[]>([]);
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteToast, setInviteToast] = useState<{ msg: string; tone: "emerald" | "rose" } | null>(null);
 
   useEffect(() => {
     const h = Store.getHackathon(slug);
@@ -65,10 +69,10 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
   );
   const suggestions = searchQuery.trim()
     ? studentsSameCollege.filter(
-        (s) =>
-          s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.email.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+      (s) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.email.toLowerCase().includes(searchQuery.toLowerCase())
+    )
     : studentsSameCollege;
 
   const currentTeam = teamId ? Store.getTeam(teamId) : null;
@@ -76,7 +80,8 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
   const problemStatements = hackathon.problemStatementEntries ?? [];
 
   const handleSolo = () => {
-    const team = Store.registerSolo(slug, user.uid);
+    if (mode === "team" && teamId) Store.deleteTeam(teamId);
+    const team = Store.registerSolo(slug, user.uid, user.name);
     setTeamId(team.id);
     setMode("solo");
     setStep(2);
@@ -85,7 +90,8 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
   const handleCreateTeam = () => {
     const name = teamName.trim();
     if (!name) return;
-    const team = Store.createTeam(slug, user.uid, name);
+    if (mode === "solo" && teamId) Store.deleteTeam(teamId);
+    const team = Store.createTeam(slug, user.uid, name, user.name);
     setTeamId(team.id);
     setMode("team");
     setStep(2);
@@ -95,6 +101,40 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
     if (!teamId) return;
     Store.inviteMember(teamId, email);
     setInvitesVersion((v) => v + 1);
+  };
+
+  const handleSendInvite = async () => {
+    const email = inviteEmail.trim();
+    if (!email || sendingInvite) return;
+    setSendingInvite(true);
+    setInviteToast(null);
+    try {
+      const res = await fetch("/api/send-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          inviterName: user.name ?? "A teammate",
+          teamName: currentTeam?.name ?? "Your team",
+          hackathonTitle: hackathon?.title ?? "Hackathon",
+          teamId: teamId ?? "",
+          hackathonId: slug,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        handleInvite(email);
+        setSentInvites((prev) => [...prev, email]);
+        setInviteEmail("");
+        setInviteToast({ msg: `Invite sent to ${email} ✓`, tone: "emerald" });
+      } else {
+        setInviteToast({ msg: data.error || "Failed to send invite.", tone: "rose" });
+      }
+    } catch {
+      setInviteToast({ msg: "Network error — could not send invite.", tone: "rose" });
+    } finally {
+      setSendingInvite(false);
+    }
   };
 
   const handleSelectProblem = (id: string) => {
@@ -122,25 +162,44 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
       </div>
 
       {/* Step indicator (1–4) */}
-      <div className="mb-8 flex items-center justify-between">
-        {STEP_LABELS.map((label, i) => {
-          const stepNum = i + 1;
-          const active = step >= stepNum;
-          return (
-            <div key={label} className="flex flex-1 items-center">
-              <div className={`flex flex-col items-center ${active ? "text-blue-600" : "text-slate-300"}`}>
-                <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-current text-sm font-semibold">
-                  {stepNum}
-                </span>
-                <span className="mt-1 text-xs font-medium">{label}</span>
-              </div>
-              {i < STEP_LABELS.length - 1 && (
-                <div className={`mx-1 h-0.5 flex-1 ${step > stepNum ? "bg-blue-600" : "bg-slate-200"}`} />
-              )}
-            </div>
-          );
-        })}
+      <div className="mb-8 flex items-center justify-between gap-2">
+        {[
+          { n: 1, label: 'Mode' },
+          { n: 2, label: 'Invite friends' },
+          { n: 3, label: 'Problem statement' },
+          { n: 4, label: 'Submit' },
+        ].map(({ n, label }, i) => (
+          <div key={n} className="flex flex-1 items-center gap-2">
+            <button
+              onClick={() => { if (n < step) setStep(n as 1 | 2 | 3 | 4); }}
+              disabled={n >= step}
+              className={`flex flex-col items-center gap-1 transition-opacity ${n < step ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+            >
+              <span className={`flex h-10 w-10 items-center justify-center rounded-full border-2 font-bold text-sm transition-colors
+                ${step === n ? 'border-blue-600 text-blue-600' :
+                  n < step ? 'border-blue-600 bg-blue-600 text-white' :
+                    'border-slate-200 text-slate-400'}`}>
+                {n < step ? '✓' : n}
+              </span>
+              <span className={`text-[10px] font-medium uppercase tracking-wider ${n <= step ? 'text-blue-600' : 'text-slate-400'}`}>
+                {label}
+              </span>
+            </button>
+            {i < 3 && (
+              <div className={`h-0.5 flex-1 transition-colors ${step > n + 1 ? 'bg-blue-600' : 'bg-slate-100'}`} />
+            )}
+          </div>
+        ))}
       </div>
+
+      {step > 1 && (
+        <button
+          onClick={() => setStep((step - 1) as 1 | 2 | 3 | 4)}
+          className="mb-4 text-sm font-medium text-slate-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+        >
+          ← Back
+        </button>
+      )}
 
       {/* Step 1: Mode (solo / team); team shows name input + Create Team */}
       {step === 1 && (
@@ -185,7 +244,7 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
         <div className="space-y-4">
           {mode === "solo" ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
-              <p className="text-slate-600">You’re registered as solo. Continue to choose a problem statement.</p>
+              <p className="text-slate-600">You're registered as solo. Continue to choose a problem statement.</p>
               <button
                 type="button"
                 onClick={goNext}
@@ -196,14 +255,51 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
             </div>
           ) : (
             <>
-              <p className="text-slate-600">Invite friends from your college.</p>
-              <input
-                type="search"
-                placeholder="Search by name or email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
+              <p className="text-slate-600">Invite friends by email to join your team.</p>
+
+              {/* Email invite input */}
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="Enter friend's email address..."
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSendInvite(); }}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendInvite}
+                  disabled={!inviteEmail.trim() || sendingInvite}
+                  className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {sendingInvite ? "Sending…" : "Send Invite"}
+                </button>
+              </div>
+
+              {/* Invite toast */}
+              {inviteToast && (
+                <p className={`text-sm font-medium ${inviteToast.tone === "emerald" ? "text-emerald-600" : "text-rose-600"}`}>
+                  {inviteToast.msg}
+                </p>
+              )}
+
+              {/* Sent invites list */}
+              {sentInvites.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-medium text-slate-500 mb-1">Invites sent</p>
+                  <ul className="space-y-1">
+                    {sentInvites.map((email) => (
+                      <li key={email} className="flex items-center justify-between text-sm text-slate-700">
+                        <span>{email}</span>
+                        <span className="text-emerald-600 text-xs font-medium">Sent ✓</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Pending local invites */}
               {pendingInvites.length > 0 && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs font-medium text-slate-500">Pending invites</p>
@@ -219,30 +315,35 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
                   </ul>
                 </div>
               )}
-              <ul className="space-y-2">
-                {suggestions.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-800">{s.name}</p>
-                      <p className="text-xs text-slate-500">{s.email}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleInvite(s.email)}
-                      disabled={pendingInvites.includes(s.id)}
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      Invite
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {suggestions.length === 0 && (
-                <p className="text-center text-sm text-slate-500">No other students from your college found.</p>
+
+              {/* Same-college suggestions */}
+              {suggestions.length > 0 && (
+                <>
+                  <p className="text-xs font-medium text-slate-500 mt-2">Students from your college</p>
+                  <ul className="space-y-2">
+                    {suggestions.map((s) => (
+                      <li
+                        key={s.id}
+                        className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"
+                      >
+                        <div>
+                          <p className="font-medium text-slate-800">{s.name}</p>
+                          <p className="text-xs text-slate-500">{s.email}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleInvite(s.email)}
+                          disabled={pendingInvites.includes(s.id) || sentInvites.includes(s.email)}
+                          className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {sentInvites.includes(s.email) ? "Sent ✓" : "Invite"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
+
               <button
                 type="button"
                 onClick={goNext}

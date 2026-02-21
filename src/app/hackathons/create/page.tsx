@@ -138,6 +138,7 @@ interface FormState {
   sponsors: SponsorEntry[];
   faqs: FAQEntry[];
   rounds: RoundConfig[];
+  round1StartDate: string;
   problemStatements: ProblemStatementEntry[];
   psVisible: boolean;
   minTeamSize: number;
@@ -189,6 +190,7 @@ export default function CreateHackathonPage() {
     sponsors: [],
     faqs: [],
     rounds: [],
+    round1StartDate: "",
     problemStatements: [],
     psVisible: true,
     minTeamSize: 2,
@@ -247,6 +249,7 @@ export default function CreateHackathonPage() {
       if (d.rounds.length === 0) errs.push("Add at least one round.");
       d.rounds.forEach((r, i) => {
         if (!r.date) errs.push(`Round ${i + 1} (${r.name}) is missing a date.`);
+        if (i === 0 && !d.round1StartDate) errs.push("Round 1 start date/time is required for the submission window.");
       });
     } else if (s === 3) {
       // PS are optional (can be released later), but if added they need a title
@@ -322,6 +325,7 @@ export default function CreateHackathonPage() {
       } : undefined,
       eligibility: d.eligibility || undefined,
       rules: d.rules || undefined,
+      round1StartDate: d.round1StartDate ? new Date(d.round1StartDate).getTime() : undefined,
       problemStatements: psText,
       problemStatementEntries: d.problemStatements,
       psVisible: d.psVisible,
@@ -912,7 +916,18 @@ function StepRounds({ d, set }: SP) {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-bold text-slate-900">Rounds Configuration</h2>
-        <p className="mt-1 text-xs text-slate-500">Define how many rounds your hackathon has. For each round, pick the type (quiz, PPT shortlisting, resume screening, etc.), whether it&#39;s online or offline, and the dates.</p>
+        <p className="mt-1 text-xs text-slate-500">Define how many rounds your hackathon has. Pick types, modes, and set the submission window for Round 1.</p>
+      </div>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-5">
+        <label className={lblCls}>🚀 Round 1 Submissions Open At *</label>
+        <input
+          type="datetime-local"
+          className={inputCls}
+          value={d.round1StartDate}
+          onChange={(e) => set("round1StartDate", e.target.value)}
+        />
+        <p className="mt-1 text-[10px] text-blue-600 font-medium">This defines when students can start uploading their initial project for Round 1.</p>
       </div>
 
       {/* Quick count selector */}

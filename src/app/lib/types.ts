@@ -96,6 +96,9 @@ export type Hackathon = {
     endDate: string;
     registrationDeadline?: string; // when registration closes
     registrationFee?: string;      // e.g. "Free", "₹400", "₹500"
+    round1StartDate?: number;      // unix ms
+    round1Deadline?: number;       // unix ms
+    problemStatements?: string;
     location?: string;
     venue?: string;
     bannerPreview?: string;
@@ -117,7 +120,7 @@ export type Hackathon = {
     eligibility?: string;          // who can participate
     rules?: string;                // hackathon rules & guidelines
 
-    problemStatements: string;
+
     problemStatementEntries?: ProblemStatementEntry[];
     psVisible?: boolean;           // whether PS are visible to students now or hidden until event day
     rounds?: RoundConfig[];
@@ -162,6 +165,9 @@ export type Team = {
         final: boolean;
         ai: boolean;
     };
+    shortlisted: boolean;
+    rank: number | null;
+    notifiedAt: number | null;
 };
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────

@@ -51,6 +51,27 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
     );
   }
 
+  if (user.role === "student" && user.status !== "verified") {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 p-8 text-center max-w-md mx-auto">
+        <div className="text-5xl">🛡️</div>
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Verification Required</h2>
+          <p className="mt-2 text-slate-600 text-sm">
+            To ensure fair competition, hackathon registration is only open to verified students.
+            Please complete your student verification and wait for admin approval.
+          </p>
+        </div>
+        <Link
+          href="/student/verification"
+          className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 transition-all"
+        >
+          Go to Verification
+        </Link>
+      </div>
+    );
+  }
+
   if (!hackathon) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center p-8">
@@ -304,7 +325,7 @@ export default function RegisterPage({ params }: { params: Promise<{ slug: strin
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <p className="text-xs font-medium text-slate-500">Pending invites</p>
                   <ul className="mt-1 space-y-1">
-                    {pendingInvites.map((id) => {
+                    {pendingInvites.map((id: string) => {
                       const s = Store.getStudent(id);
                       return (
                         <li key={id} className="text-sm text-slate-700">

@@ -21,6 +21,11 @@ export type Student = {
     selfie?: string;             // base64 or filename
     otpVerified: boolean;
     faceMatchScore?: number;     // 0–100
+    faceEmbedding?: number[];    // 128-value face encoding from face_recognition
+    faceVerified?: boolean;
+    faceConfidence?: number;     // 0–100
+    livenessPassed?: boolean;
+    college?: string;            // for team-mate matching
     verificationStatus: VerificationStatus;
 };
 
@@ -151,7 +156,9 @@ export type Team = {
     hackathonId: string;
     name: string;
     members: string[];           // student IDs
+    pendingInvites?: string[];   // student emails or IDs
     problemStatement: string;
+    selectedProblemStatementId?: string;
     round1PPT?: string;          // filename
     finalPPT?: string;
     githubLink?: string;

@@ -2,7 +2,7 @@
 
 import { useState, useRef, type DragEvent, type ChangeEvent } from "react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { storage, db } from "../../lib/firebase";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
@@ -118,7 +118,7 @@ export default function FileUploadZone({
                     const url = await getDownloadURL(task.snapshot.ref);
                     setDownloadUrl(url);
                     // Save URL to Firestore user doc
-                    await updateDoc(doc(db, "users", uid), { [firestoreField]: url });
+                    await setDoc(doc(db, "users", uid), { [firestoreField]: url }, { merge: true });
                     setStatus("success");
                     onUploadComplete?.(url);
                 } catch (err: unknown) {
@@ -163,12 +163,12 @@ export default function FileUploadZone({
             onDrop={onDrop}
             onClick={() => status !== "uploading" && inputRef.current?.click()}
             className={`relative rounded-xl border-2 border-dashed p-4 text-center transition-all cursor-pointer ${dragging
-                    ? `${colors.border} bg-slate-50 scale-[1.02]`
-                    : status === "success"
-                        ? "border-emerald-300 bg-emerald-50/50"
-                        : status === "error"
-                            ? "border-rose-300 bg-rose-50/50"
-                            : "border-slate-300 bg-white hover:border-slate-400"
+                ? `${colors.border} bg-slate-50 scale-[1.02]`
+                : status === "success"
+                    ? "border-emerald-300 bg-emerald-50/50"
+                    : status === "error"
+                        ? "border-rose-300 bg-rose-50/50"
+                        : "border-slate-300 bg-white hover:border-slate-400"
                 }`}
         >
             <input

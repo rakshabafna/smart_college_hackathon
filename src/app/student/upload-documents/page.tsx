@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
 import { useAuth } from "../../AuthContext";
 import FileUploadZone from "../../components/FileUploadZone";
@@ -62,7 +62,7 @@ export default function UploadDocumentsPage() {
         setAadhaarError("");
         try {
             // Save ONLY the last 4 digits to Firestore
-            await updateDoc(doc(db, "users", user.uid), { aadhaarLast4: aadhaarInput.slice(8) });
+            await setDoc(doc(db, "users", user.uid), { aadhaarLast4: aadhaarInput.slice(8) }, { merge: true });
             setAadhaarSaved(true);
         } catch {
             setAadhaarError("Failed to save. Please try again.");
@@ -76,7 +76,7 @@ export default function UploadDocumentsPage() {
         if (!user || !allUploaded) return;
         setSubmitting(true);
         try {
-            await updateDoc(doc(db, "users", user.uid), { status: "pending" });
+            await setDoc(doc(db, "users", user.uid), { status: "pending" }, { merge: true });
             setSubmitted(true);
             setTimeout(() => router.push("/"), 2000);
         } catch {

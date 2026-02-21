@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             displayName: extra.displayName,
             createdAt: serverTimestamp() as FSUser["createdAt"],
         };
-        await setDoc(doc(db, "users", cred.user.uid), profile);
+        await setDoc(doc(db, "users", cred.user.uid), profile, { merge: true });
         const appUser = buildAppUser(cred.user, profile);
         setUser(appUser);
         return appUser;
@@ -188,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             photoURL: cred.user.photoURL ?? undefined,
             createdAt: serverTimestamp() as FSUser["createdAt"],
         };
-        await setDoc(doc(db, "users", cred.user.uid), profile);
+        await setDoc(doc(db, "users", cred.user.uid), profile, { merge: true });
         const appUser = buildAppUser(cred.user, profile);
         setUser(appUser);
         return { appUser, isNewUser };

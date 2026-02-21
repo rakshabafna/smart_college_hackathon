@@ -470,268 +470,105 @@ export const Store = {
         const regs = this.getRegistrations().filter((id) => id !== hackathonId);
         window.localStorage.setItem("hs-registrations", JSON.stringify(regs));
     },
-    getRegistrationMode(hackathonId: string): "solo" | "team" | null {
-        if (typeof window === "undefined") return null;
-        const raw = window.localStorage.getItem(`hs-reg-mode-${hackathonId}`);
-        return (raw === "solo" || raw === "team" ? raw : null) as "solo" | "team" | null;
-    },
-    getRegistrationTeamId(hackathonId: string): string | null {
-        if (typeof window === "undefined") return null;
-        return window.localStorage.getItem(`hs-reg-team-${hackathonId}`);
-    },
-    registerSolo(hackathonId: string, studentId: string, name?: string): Team {
-        const teamId = `team-${hackathonId}-${Date.now()}-solo`;
-        const team: Team = {
-            id: teamId,
-            hackathonId,
-            name: name || "Solo Project",
-            members: [name || studentId],
-            memberIds: [studentId],
-            leaderId: studentId,
-            pendingInvites: [],
-            problemStatement: "",
-            selectedProblemStatementId: "",
-            round1SubmissionUrl: "",
-            submissionLockedAt: null,
-            registrationMode: "solo",
-            submissionStatus: "not_started",
-            applicationComplete: false,
-            applicationSteps: { verification: false, registration: false, qr: false, final: false, ai: false },
-            shortlisted: false,
-            rank: null,
-            notifiedAt: null,
-        };
-        this.upsertTeam(team);
-        this.registerForHackathon(hackathonId);
-        if (typeof window !== "undefined") {
-            window.localStorage.setItem(`hs-reg-mode-${hackathonId}`, "solo");
-            window.localStorage.setItem(`hs-reg-team-${hackathonId}`, teamId);
-        }
-        return team;
-    },
-    createTeam(hackathonId: string, leaderId: string, teamName: string, leaderName?: string): Team {
-        const teamId = `team-${hackathonId}-${Date.now()}`;
-        const team: Team = {
-            id: teamId,
-            hackathonId,
-            name: teamName,
-            members: [leaderName || leaderId],
-            memberIds: [leaderId],
-            leaderId,
-            pendingInvites: [],
-            problemStatement: "",
-            selectedProblemStatementId: "",
-            round1SubmissionUrl: "",
-            submissionLockedAt: null,
-            registrationMode: "team",
-            submissionStatus: "not_started",
-            applicationComplete: false,
-            applicationSteps: { verification: false, registration: false, qr: false, final: false, ai: false },
-            shortlisted: false,
-            rank: null,
-            notifiedAt: null,
-        };
-        this.upsertTeam(team);
-        this.registerForHackathon(hackathonId);
-        if (typeof window !== "undefined") {
-            window.localStorage.setItem(`hs-reg-mode-${hackathonId}`, "team");
-            window.localStorage.setItem(`hs-reg-team-${hackathonId}`, teamId);
-        }
-        return team;
-    },
+getRegistrationMode(hackathonId: string): "solo" | "team" | null {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(`hs-reg-mode-${hackathonId}`);
+    return (raw === "solo" || raw === "team" ? raw : null);
+},
 
-    selectProblemStatement(teamId: string, psId: string): void {
-        const team = this.getTeam(teamId);
-        if (!team) return;
-        this.upsertTeam({ ...team, selectedProblemStatementId: psId });
-    },
-    getStudentTeamForHackathon(hackathonId: string, studentId: string): Team | undefined {
-        return this.getTeams(hackathonId).find(
-            (t) => (t.memberIds && t.memberIds.includes(studentId)) || (t.members && t.members.includes(studentId))
-        );
-    },
-    setSoloProblemStatement(hackathonId: string, problemStatementId: string): void {
-        if (typeof window === "undefined") return;
-        window.localStorage.setItem(`hs-reg-ps-${hackathonId}`, problemStatementId);
-    },
-    lockSubmissionIfPastDeadline(teamId: string): void {
-        const team = this.getTeam(teamId);
-        if (!team) return;
-        const hackathon = this.getHackathon(team.hackathonId);
-        if (!hackathon?.round1Deadline) return;
-        if (Date.now() > hackathon.round1Deadline) {
-            const lockedAt = hackathon.round1Deadline;
-            this.upsertTeam({ ...team, submissionLockedAt: lockedAt });
-        }
-    },
-    saveSubmissionUrl(teamId: string, downloadURL: string): void {
-        const team = this.getTeam(teamId);
-        if (!team) return;
-        this.upsertTeam({ ...team, round1SubmissionUrl: downloadURL });
-    },
-    submitTeam(teamId: string): void {
-        const teams = this.getTeams();
-        const idx = teams.findIndex((t) => t.id === teamId);
-        if (idx === -1) return;
-        teams[idx].submissionStatus = "submitted";
-        teams[idx].submissionLockedAt = Date.now();
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
-    shortlistTeam(teamId: string, rank: number): void {
-        const teams = this.getTeams();
-        const idx = teams.findIndex((t) => t.id === teamId);
-        if (idx === -1) return;
-        teams[idx].shortlisted = true;
-        teams[idx].rank = rank;
-        teams[idx].notifiedAt = Date.now();
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
-    getShortlistedTeams(hackathonId: string): Team[] {
-        return this.getTeams(hackathonId)
-            .filter((t) => t.shortlisted === true)
-            .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
-    },
-    getStudentTeam(hackathonId: string, studentId: string): Team | undefined {
-        return this.getTeams(hackathonId).find(
-            (t) => (t.memberIds ?? []).includes(studentId) || (t.members ?? []).includes(studentId) || t.leaderId === studentId
-        );
-    },
-    markNotified(teamId: string): void {
-        const teams = this.getTeams();
-        const idx = teams.findIndex((t) => t.id === teamId);
-        if (idx === -1) return;
-        teams[idx].notifiedAt = Date.now();
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
-    inviteMember(teamId: string, email: string): void {
-        const teams = this.getTeams();
-        const idx = teams.findIndex((t) => t.id === teamId);
-        if (idx === -1) return;
-        if (!teams[idx].pendingInvites) teams[idx].pendingInvites = [];
-        if (!teams[idx].pendingInvites.includes(email)) {
-            teams[idx].pendingInvites.push(email);
-        }
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
-    getPendingInvites(email: string): { team: Team; hackathon: Hackathon }[] {
-        const teams = this.getTeams();
-        return teams
-            .filter((t) => t.pendingInvites?.includes(email))
-            .map((t) => ({ team: t, hackathon: this.getHackathon(t.hackathonId)! }))
-            .filter((x) => x.hackathon);
-    },
-    getInvitesForStudent(studentId: string): Team[] {
-        const student = this.getStudent(studentId);
-        if (!student) return [];
-        return this.getTeams().filter(
-            (t) => t.pendingInvites?.includes(student.email) || t.pendingInvites?.includes(studentId)
-        );
-    },
-    acceptInvite(teamId: string, studentId: string): void {
-        const teams = this.getTeams();
-        const idx = teams.findIndex((t) => t.id === teamId);
-        if (idx === -1) return;
-        const student = this.getStudent(studentId);
-        const email = student?.email ?? studentId;
-        teams[idx].pendingInvites = (teams[idx].pendingInvites ?? []).filter((e) => e !== email && e !== studentId);
-        if (!teams[idx].members.includes(studentId)) teams[idx].members.push(studentId);
-        if (!teams[idx].memberIds.includes(studentId)) teams[idx].memberIds.push(studentId);
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
-    declineInvite(teamId: string, email: string): void {
-        const teams = this.getTeams();
-        const idx = teams.findIndex((t) => t.id === teamId);
-        if (idx === -1) return;
-        teams[idx].pendingInvites = (teams[idx].pendingInvites ?? []).filter((e) => e !== email);
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
-    deleteTeam(teamId: string): void {
-        const teams = this.getTeams().filter((t) => t.id !== teamId);
-        localStorage.setItem("hs-teams", JSON.stringify(teams));
-    },
+getRegistrationTeamId(hackathonId: string): string | null {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(`hs-reg-team-${hackathonId}`);
+},
 
-    // ── Certificates ──────────────────────────────────────────────────────────
-    getCertificates(hackathonId?: string): Certificate[] {
-        const all = readLS<Certificate>(KEY_CERTIFICATES, []);
-        return hackathonId ? all.filter((c) => c.hackathonId === hackathonId) : all;
-    },
-    getCertificate(id: string): Certificate | undefined {
-        return readLS<Certificate>(KEY_CERTIFICATES, []).find((c) => c.id === id);
-    },
-    getCertificateByCode(code: string): Certificate | undefined {
-        return readLS<Certificate>(KEY_CERTIFICATES, []).find((c) => c.verificationCode === code);
-    },
-    addCertificate(cert: Certificate): void {
-        const list = readLS<Certificate>(KEY_CERTIFICATES, []);
-        list.push(cert);
-        writeLS(KEY_CERTIFICATES, list);
-    },
-    addCertificates(certs: Certificate[]): void {
-        const list = readLS<Certificate>(KEY_CERTIFICATES, []);
-        list.push(...certs);
-        writeLS(KEY_CERTIFICATES, list);
-    },
+registerSolo(hackathonId: string, studentId: string, name?: string): Team {
+    const teamId = `team-${hackathonId}-${Date.now()}-solo`;
 
-    // ── Audit Logs ────────────────────────────────────────────────────────────
-    getAuditLogs(hackathonId?: string): AuditLog[] {
-        const all = readLS<AuditLog>(KEY_AUDIT_LOGS, []);
-        return hackathonId ? all.filter((l) => l.hackathonId === hackathonId) : all;
-    },
-    addAuditLog(log: AuditLog): void {
-        const list = readLS<AuditLog>(KEY_AUDIT_LOGS, []);
-        list.unshift(log);
-        if (list.length > 500) list.length = 500; // cap at 500
-        writeLS(KEY_AUDIT_LOGS, list);
-    },
+    const team: Team = {
+        id: teamId,
+        hackathonId,
+        name: name || "Solo Project",
+        members: [name || studentId],
+        memberIds: [studentId],
+        leaderId: studentId,
+        pendingInvites: [],
+        problemStatement: "",
+        selectedProblemStatementId: "",
+        round1SubmissionUrl: "",
+        submissionLockedAt: null,
+        registrationMode: "solo",
+        submissionStatus: "not_started",
+        applicationComplete: false,
+        applicationSteps: { verification: false, registration: false, qr: false, final: false, ai: false },
+        shortlisted: false,
+        rank: null,
+        notifiedAt: null,
+    };
 
-    // ── Team Invites ──────────────────────────────────────────────────────────
-    getTeamInvites(hackathonId?: string): TeamInvite[] {
-        const all = readLS<TeamInvite>(KEY_TEAM_INVITES, []);
-        return hackathonId ? all.filter((i) => i.hackathonId === hackathonId) : all;
-    },
-    getInvitesForEmail(email: string): TeamInvite[] {
-        return readLS<TeamInvite>(KEY_TEAM_INVITES, []).filter(
-            (i) => i.inviteeEmail.toLowerCase() === email.toLowerCase() && i.status === "pending"
-        );
-    },
-    addTeamInvite(invite: TeamInvite): void {
-        const list = readLS<TeamInvite>(KEY_TEAM_INVITES, []);
-        list.push(invite);
-        writeLS(KEY_TEAM_INVITES, list);
-    },
-    updateInviteStatus(inviteId: string, status: TeamInvite["status"]): void {
-        const list = readLS<TeamInvite>(KEY_TEAM_INVITES, []);
-        const inv = list.find((i) => i.id === inviteId);
-        if (inv) inv.status = status;
-        writeLS(KEY_TEAM_INVITES, list);
-    },
+    this.upsertTeam(team);
+    this.registerForHackathon(hackathonId);
 
-    // ── Analytics Helpers ──────────────────────────────────────────────────────
-    getAttendanceByHour(hackathonId?: string): { hour: string; count: number }[] {
-        const entries = this.getGateEntries(hackathonId).filter((e) => e.result === "allowed");
-        const hourMap: Record<string, number> = {};
-        entries.forEach((e) => {
-            const h = new Date(e.timestamp).getHours();
-            const label = `${h.toString().padStart(2, "0")}:00`;
-            hourMap[label] = (hourMap[label] || 0) + 1;
-        });
-        return Object.entries(hourMap)
-            .map(([hour, count]) => ({ hour, count }))
-            .sort((a, b) => a.hour.localeCompare(b.hour));
-    },
-    getMealStats(hackathonId?: string): { meal: string; served: number; blocked: number }[] {
-        const logs = this.getScanLogs(hackathonId);
-        const meals = ["breakfast", "lunch", "dinner"] as const;
-        return meals.map((m) => {
-            const mealLogs = logs.filter((l) => l.type === m);
-            return {
-                meal: m.charAt(0).toUpperCase() + m.slice(1),
-                served: mealLogs.filter((l) => l.result === "valid" || l.result === "allowed").length,
-                blocked: mealLogs.filter((l) => l.result === "already_used" || l.result === "blocked").length,
-            };
-        });
-    },
-};
+    if (typeof window !== "undefined") {
+        window.localStorage.setItem(`hs-reg-mode-${hackathonId}`, "solo");
+        window.localStorage.setItem(`hs-reg-team-${hackathonId}`, teamId);
+    }
+
+    return team;
+},
+
+createTeam(hackathonId: string, leaderId: string, teamName: string, leaderName?: string): Team {
+
+    const teamId = `team-${hackathonId}-${Date.now()}`;
+
+    const team: Team = {
+        id: teamId,
+        hackathonId,
+        name: teamName,
+        members: [leaderName || leaderId],
+        memberIds: [leaderId],
+        leaderId,
+        pendingInvites: [],
+        problemStatement: "",
+        selectedProblemStatementId: "",
+        round1SubmissionUrl: "",
+        submissionLockedAt: null,
+        registrationMode: "team",
+        submissionStatus: "not_started",
+        applicationComplete: false,
+        applicationSteps: { verification: false, registration: false, qr: false, final: false, ai: false },
+        shortlisted: false,
+        rank: null,
+        notifiedAt: null,
+    };
+
+    this.upsertTeam(team);
+    this.registerForHackathon(hackathonId);
+
+    if (typeof window !== "undefined") {
+        window.localStorage.setItem(`hs-reg-mode-${hackathonId}`, "team");
+        window.localStorage.setItem(`hs-reg-team-${hackathonId}`, teamId);
+    }
+
+    return team;
+},
+
+selectProblemStatement(teamId: string, psId: string): void {
+
+    const team = this.getTeam(teamId);
+
+    if (!team) return;
+
+    const hack = this.getHackathon(team.hackathonId);
+
+    const ps = hack?.problemStatementEntries?.find(p => p.id === psId);
+
+    this.upsertTeam({
+        ...team,
+        selectedProblemStatementId: psId,
+        problemStatement: ps?.title || "",
+    });
+},
+
 
 // ─── Weighted score calculator ────────────────────────────────────────────────
 // Weights: Innovation 25%, Feasibility 20%, Tech 30%, Presentation 15%, Impact 10%

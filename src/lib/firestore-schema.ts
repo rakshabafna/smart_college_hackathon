@@ -18,6 +18,10 @@ export interface FSUser {
     aadhaarLast4?: string;
     aadhaarImageUrl?: string;
     selfieUrl?: string;
+    faceEmbedding?: number[];     // 128-value face encoding from face_recognition
+    faceVerified?: boolean;
+    faceConfidence?: number;      // 0–100
+    livenessPassed?: boolean;
     createdAt: Timestamp;
 }
 
@@ -90,4 +94,19 @@ export interface FSMealLog {
     scannedBy: string;            // scanner operator uid
     result: "valid" | "already_used" | "expired" | "invalid";
     scannedAt: Timestamp;
+}
+
+// ─── Verification Session ─────────────────────────────────────────────────────
+export interface FSVerificationSession {
+    id: string;
+    studentUid: string;
+    verified: boolean;
+    confidence: number;           // 0–100
+    livenessPassed: boolean;
+    blinkDetected: boolean;
+    motionDetected: boolean;
+    facesDetected: number;
+    totalFrames: number;
+    distance: number;             // face_distance value
+    timestamp: Timestamp;
 }

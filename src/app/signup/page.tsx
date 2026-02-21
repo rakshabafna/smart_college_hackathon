@@ -13,6 +13,7 @@ type FormData = {
   name: string;
   email: string;
   phone: string;
+  role: "student" | "organizer";
   password: string;
   confirm: string;
 };
@@ -37,13 +38,13 @@ export default function SignUpPage() {
       await signUpWithEmail(data.email, data.password, {
         displayName: data.name,
         phone: data.phone,
-        role: "student",
+        role: data.role,
       });
       // Send Firebase email verification
       if (auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
       }
-      router.push("/student/verify");
+      router.push(data.role === "organizer" ? "/admin" : "/student/verify");
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Sign-up failed. Please try again.";
@@ -209,6 +210,40 @@ export default function SignUpPage() {
             )}
           </div>
 
+          {/* Role selector */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              I am signing up as
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: "student" as const, label: "🎓 Student", desc: "Participate in hackathons" },
+                { value: "organizer" as const, label: "🏢 Organiser", desc: "Create & manage hackathons" },
+              ].map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-center transition-all ${watch("role") === opt.value
+                      ? "border-blue-500 bg-blue-50 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                >
+                  <input
+                    type="radio"
+                    value={opt.value}
+                    className="sr-only"
+                    {...register("role", { required: "Please select a role." })}
+                  />
+                  <span className="text-xl">{opt.label.split(" ")[0]}</span>
+                  <span className="text-sm font-semibold text-slate-800">{opt.label.split(" ").slice(1).join(" ")}</span>
+                  <span className="text-[11px] text-slate-500">{opt.desc}</span>
+                </label>
+              ))}
+            </div>
+            {errors.role && (
+              <p className="mt-1 text-xs font-medium text-rose-600">{errors.role.message}</p>
+            )}
+          </div>
+
           {/* Password */}
           <div>
             <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
@@ -266,8 +301,9 @@ export default function SignUpPage() {
         </form>
 
         <p className="mt-4 text-xs text-slate-500">
-          After sign-up you&apos;ll complete student verification (college ID, masked Aadhaar,
-          selfie &amp; OTP). Only verified students can register for hackathons.
+          <strong>Students:</strong> After sign-up you&apos;ll complete verification (college ID, Aadhaar, selfie &amp; OTP).
+          <br />
+          <strong>Organisers:</strong> You&apos;ll go directly to the admin dashboard to create hackathons.
         </p>
       </div>
     </div>

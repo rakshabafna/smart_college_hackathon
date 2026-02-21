@@ -4,14 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
-import type { Role } from "./lib/types";
 
 type NavItem = { href: string; label: string };
+
+type AppRole = "student" | "admin" | "organizer" | "judge" | "scanner_gate" | "scanner_food";
 
 // Student sees: Home, Hackathons, My Verification, My QR Pass
 // Organizer (admin) sees: Home, Hackathons, Create Hackathon, Admin Dashboard
 // Judge / scanners: minimal (legacy access via direct URL)
-const NAV_BY_ROLE: Record<Role | "guest", NavItem[]> = {
+const NAV_BY_ROLE: Record<AppRole | "guest", NavItem[]> = {
   student: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
@@ -19,6 +20,12 @@ const NAV_BY_ROLE: Record<Role | "guest", NavItem[]> = {
     { href: "/student/pass", label: "My QR Pass" },
   ],
   admin: [
+    { href: "/", label: "Home" },
+    { href: "/hackathons", label: "Hackathons" },
+    { href: "/hackathons/create", label: "Create hackathon" },
+    { href: "/admin", label: "Dashboard" },
+  ],
+  organizer: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
     { href: "/hackathons/create", label: "Create hackathon" },
@@ -37,18 +44,20 @@ const NAV_BY_ROLE: Record<Role | "guest", NavItem[]> = {
   ],
 };
 
-const ROLE_LABELS: Record<Role, string> = {
+const ROLE_LABELS: Record<AppRole, string> = {
   student: "Student",
   judge: "Judge",
   admin: "Organizer",
+  organizer: "Organizer",
   scanner_gate: "Gate",
   scanner_food: "Food",
 };
 
-const ROLE_COLORS: Record<Role, string> = {
+const ROLE_COLORS: Record<AppRole, string> = {
   student: "bg-blue-50 text-blue-700",
   judge: "bg-violet-50 text-violet-700",
   admin: "bg-emerald-50 text-emerald-700",
+  organizer: "bg-emerald-50 text-emerald-700",
   scanner_gate: "bg-slate-900 text-white",
   scanner_food: "bg-amber-50 text-amber-700",
 };
@@ -66,7 +75,7 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const navItems = user ? NAV_BY_ROLE[user.role] : NAV_BY_ROLE["guest"];
+  const navItems = user ? (NAV_BY_ROLE[user.role as AppRole] ?? NAV_BY_ROLE["guest"]) : NAV_BY_ROLE["guest"];
 
   const NavLinks = ({ onClick }: { onClick?: () => void }) => (
     <>
@@ -113,8 +122,8 @@ export default function Navbar() {
           <div className="ml-3 flex items-center gap-2 border-l border-slate-200 pl-3">
             {user ? (
               <>
-                <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${ROLE_COLORS[user.role]}`}>
-                  {ROLE_LABELS[user.role]}
+                <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${ROLE_COLORS[user.role as AppRole] ?? "bg-slate-100 text-slate-700"}`}>
+                  {ROLE_LABELS[user.role as AppRole] ?? "User"}
                 </span>
                 <span className="hidden text-xs text-slate-700 md:inline">
                   Hi, <span className="font-semibold text-slate-900">{user.name}</span>

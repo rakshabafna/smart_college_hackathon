@@ -7,37 +7,26 @@ import { useAuth } from "./AuthContext";
 
 type NavItem = { href: string; label: string };
 
-type AppRole = "student" | "admin" | "organizer" | "judge" | "scanner_gate" | "scanner_food";
+type AppRole = "student" | "organiser";
 
-// Student sees: Home, Hackathons, My Verification, My QR Pass
-// Organizer (admin) sees: Home, Hackathons, Create Hackathon, Admin Dashboard
-// Judge / scanners: minimal (legacy access via direct URL)
 const NAV_BY_ROLE: Record<AppRole | "guest", NavItem[]> = {
   student: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
-    { href: "/student/verification", label: "Verification" },
-    { href: "/student/pass", label: "My QR Pass" },
+    { href: "/student/dashboard", label: "Dashboard" },
+    { href: "/student/team", label: "My Team" },
+    { href: "/student/pass", label: "QR Passes" },
+    { href: "/leaderboard", label: "Leaderboard" },
   ],
-  admin: [
+  organiser: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
-    { href: "/hackathons/create", label: "Create hackathon" },
-    { href: "/admin", label: "Dashboard" },
+    { href: "/admin", label: "Admin" },
+    { href: "/judge", label: "Judge" },
+    { href: "/scanner/gate", label: "Gate" },
+    { href: "/scanner/food", label: "Food" },
+    { href: "/leaderboard", label: "Leaderboard" },
   ],
-  organizer: [
-    { href: "/", label: "Home" },
-    { href: "/hackathons", label: "Hackathons" },
-    { href: "/hackathons/create", label: "Create hackathon" },
-    { href: "/admin", label: "Dashboard" },
-  ],
-  judge: [
-    { href: "/", label: "Home" },
-    { href: "/hackathons", label: "Hackathons" },
-    { href: "/judge", label: "Judging" },
-  ],
-  scanner_gate: [{ href: "/scanner/gate", label: "Gate Scanner" }],
-  scanner_food: [{ href: "/scanner/food", label: "Food Scanner" }],
   guest: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
@@ -46,20 +35,12 @@ const NAV_BY_ROLE: Record<AppRole | "guest", NavItem[]> = {
 
 const ROLE_LABELS: Record<AppRole, string> = {
   student: "Student",
-  judge: "Judge",
-  admin: "Organizer",
-  organizer: "Organizer",
-  scanner_gate: "Gate",
-  scanner_food: "Food",
+  organiser: "Organiser",
 };
 
 const ROLE_COLORS: Record<AppRole, string> = {
   student: "bg-blue-50 text-blue-700",
-  judge: "bg-violet-50 text-violet-700",
-  admin: "bg-emerald-50 text-emerald-700",
-  organizer: "bg-emerald-50 text-emerald-700",
-  scanner_gate: "bg-slate-900 text-white",
-  scanner_food: "bg-amber-50 text-amber-700",
+  organiser: "bg-emerald-50 text-emerald-700",
 };
 
 export default function Navbar() {
@@ -75,7 +56,14 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const navItems = user ? (NAV_BY_ROLE[user.role as AppRole] ?? NAV_BY_ROLE["guest"]) : NAV_BY_ROLE["guest"];
+  // Normalize role for backward compat (admin/organizer → organiser)
+  const rawRole = (user?.role ?? "guest") as string;
+  const effectiveRole: AppRole | "guest" = !user
+    ? "guest"
+    : (rawRole === "admin" || rawRole === "organizer" || rawRole === "organiser")
+      ? "organiser"
+      : "student";
+  const navItems = NAV_BY_ROLE[effectiveRole];
 
   const NavLinks = ({ onClick }: { onClick?: () => void }) => (
     <>

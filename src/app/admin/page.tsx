@@ -2,14 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { Store, calcWeightedScore } from "../lib/store";
-import type { Student, Team, ScoreEntry } from "../lib/types";
+import type { Student, Team, ScoreEntry, AuditLog } from "../lib/types";
 import StatusBadge from "../components/StatusBadge";
 import Toast from "../components/Toast";
 import HackathonSelector from "../components/HackathonSelector";
+import AuthGuard from "../components/AuthGuard";
 
-type AdminTab = "verification" | "qr" | "ppt" | "ranking" | "attendance" | "meals" | "sponsors";
+type AdminTab = "verification" | "qr" | "ppt" | "ranking" | "attendance" | "meals" | "sponsors" | "audit" | "certificates";
 
 export default function AdminPage() {
+  return (
+    <AuthGuard role="organiser">
+      <AdminContent />
+    </AuthGuard>
+  );
+}
+
+function AdminContent() {
   const [tab, setTab] = useState<AdminTab>("verification");
   const [hackId, setHackId] = useState("campushack-2026");
   const [students, setStudents] = useState<Student[]>([]);
@@ -77,6 +86,8 @@ export default function AdminPage() {
     { key: "ranking", label: "Live ranking", emoji: "🏆" },
     { key: "attendance", label: "Attendance", emoji: "📋" },
     { key: "sponsors", label: "Sponsors", emoji: "💼" },
+    { key: "audit", label: "Audit Logs", emoji: "📜" },
+    { key: "certificates", label: "Certificates", emoji: "🏅" },
   ];
 
   return (
@@ -433,6 +444,38 @@ export default function AdminPage() {
           </div>
         </section>
       )}
+
+      {/* ── Audit Logs tab ── */}
+      {tab === "audit" && (
+        <AuditLogTab hackId={hackId} />
+      )}
+
+      {/* ── Certificates tab ── */}
+      {tab === "certificates" && (
+        <section className="space-y-4">
+          <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+            <h2 className="text-lg font-semibold text-slate-900 mb-2">Certificate Management</h2>
+            <p className="text-sm text-slate-600 mb-4">
+              Generate, view, and manage certificates for all participants and winners.
+            </p>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
+              <Stat label="Total Certs" value={Store.getCertificates(hackId).length} />
+              <Stat label="Winners" value={Store.getCertificates(hackId).filter(c => c.type === "winner").length} tone="amber" />
+              <Stat label="Runners Up" value={Store.getCertificates(hackId).filter(c => c.type === "runner_up").length} />
+              <Stat label="Participation" value={Store.getCertificates(hackId).filter(c => c.type === "participation").length} tone="emerald" />
+            </div>
+            <a
+              href="/admin/certificates"
+              className="inline-flex rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-all"
+            >
+              🏅 Open Certificate Generator →
+            </a>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+            <p>Students and anyone can verify certificates at <a href="/certificates/verify" className="font-semibold text-blue-600 underline">/certificates/verify</a></p>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -444,5 +487,83 @@ function Stat({ label, value, tone }: { label: string; value: number | string; t
       <p className="text-[10px] font-semibold uppercase text-slate-400">{label}</p>
       <p className={`mt-1 text-2xl font-semibold ${tone ? colors[tone] : "text-slate-900"}`}>{value}</p>
     </div>
+  );
+}
+
+function AuditLogTab({ hackId }: { hackId: string }) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [filter, setFilter] = useState<string>("all");
+
+  useEffect(() => {
+    setLogs(Store.getAuditLogs(hackId));
+  }, [hackId]);
+
+  const filtered = filter === "all" ? logs : logs.filter((l) => l.action === filter);
+
+  const actionLabels: Record<string, { text: string; color: string }> = {
+    student_approved: { text: "✓ Approved", color: "bg-emerald-50 text-emerald-700" },
+    student_flagged: { text: "⚠ Flagged", color: "bg-amber-50 text-amber-700" },
+    gate_entry: { text: "🚪 Gate Entry", color: "bg-blue-50 text-blue-700" },
+    gate_blocked: { text: "🚫 Gate Blocked", color: "bg-rose-50 text-rose-700" },
+    meal_scanned: { text: "🍽️ Meal Scan", color: "bg-emerald-50 text-emerald-700" },
+    meal_blocked: { text: "🍽️ Meal Blocked", color: "bg-rose-50 text-rose-700" },
+    score_submitted: { text: "📊 Score", color: "bg-violet-50 text-violet-700" },
+    team_shortlisted: { text: "✓ Shortlisted", color: "bg-emerald-50 text-emerald-700" },
+    certificate_issued: { text: "🏅 Certificate", color: "bg-amber-50 text-amber-700" },
+    hackathon_created: { text: "🚀 Created", color: "bg-blue-50 text-blue-700" },
+    meal_window_opened: { text: "🟢 Meal Open", color: "bg-emerald-50 text-emerald-700" },
+    meal_window_closed: { text: "🔴 Meal Close", color: "bg-slate-100 text-slate-700" },
+  };
+
+  const uniqueActions = [...new Set(logs.map((l) => l.action))];
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-900">Audit Trail</h2>
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500"
+        >
+          <option value="all">All Actions ({logs.length})</option>
+          {uniqueActions.map((a) => (
+            <option key={a} value={a}>{actionLabels[a]?.text ?? a}</option>
+          ))}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-2xl bg-slate-50 p-8 text-center">
+          <p className="text-3xl mb-2">📜</p>
+          <p className="text-sm font-medium text-slate-600">No audit logs yet.</p>
+          <p className="text-xs text-slate-400 mt-1">Actions will be logged as events occur.</p>
+        </div>
+      ) : (
+        <div className="space-y-1.5 max-h-[500px] overflow-y-auto">
+          {filtered.map((log) => {
+            const al = actionLabels[log.action] ?? { text: log.action, color: "bg-slate-100 text-slate-700" };
+            const time = new Date(log.timestamp);
+            return (
+              <div key={log.id} className="flex items-start gap-3 rounded-xl bg-white px-4 py-3 ring-1 ring-slate-100">
+                <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${al.color}`}>
+                  {al.text}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-800 truncate">
+                    <strong>{log.actorName}</strong>
+                    {log.targetName && <> → {log.targetName}</>}
+                  </p>
+                  {log.details && <p className="text-xs text-slate-500 truncate">{log.details}</p>}
+                </div>
+                <p className="text-[10px] text-slate-400 shrink-0">
+                  {time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

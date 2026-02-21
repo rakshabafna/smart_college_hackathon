@@ -13,7 +13,7 @@ type FormData = {
   name: string;
   email: string;
   phone: string;
-  role: "student" | "organizer";
+  role: "student" | "organiser";
   password: string;
   confirm: string;
 };
@@ -44,7 +44,7 @@ export default function SignUpPage() {
       if (auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
       }
-      router.push(data.role === "organizer" ? "/admin" : "/student/verify");
+      router.push(data.role === "organiser" ? "/admin" : "/student/verify");
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Sign-up failed. Please try again.";
@@ -218,13 +218,13 @@ export default function SignUpPage() {
             <div className="grid grid-cols-2 gap-2">
               {[
                 { value: "student" as const, label: "🎓 Student", desc: "Participate in hackathons" },
-                { value: "organizer" as const, label: "🏢 Organiser", desc: "Create & manage hackathons" },
+                { value: "organiser" as const, label: "🏢 Organiser", desc: "Create & manage hackathons" },
               ].map((opt) => (
                 <label
                   key={opt.value}
                   className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-center transition-all ${watch("role") === opt.value
-                      ? "border-blue-500 bg-blue-50 shadow-sm"
-                      : "border-slate-200 bg-white hover:border-slate-300"
+                    ? "border-blue-500 bg-blue-50 shadow-sm"
+                    : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                 >
                   <input

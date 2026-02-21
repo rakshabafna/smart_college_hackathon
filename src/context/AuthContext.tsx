@@ -69,6 +69,15 @@ async function fetchProfile(uid: string): Promise<FSUser | null> {
     return snap.exists() ? (snap.data() as FSUser) : null;
 }
 
+// ─── Helper: normalize role (backward compat) ────────────────────────────────
+
+function normalizeRole(r: string | undefined | null): FSUser["role"] {
+    if (!r) return "student";
+    const lower = r.toLowerCase().trim();
+    if (lower === "admin" || lower === "organizer" || lower === "organiser") return "organiser";
+    return "student";
+}
+
 function buildAppUser(fbUser: FirebaseUser, profile: FSUser | null): AppUser {
     const displayName =
         profile?.displayName ?? fbUser.displayName ?? fbUser.email ?? "";
@@ -78,7 +87,7 @@ function buildAppUser(fbUser: FirebaseUser, profile: FSUser | null): AppUser {
         email: fbUser.email ?? "",
         name: displayName,          // backward compat
         profile,
-        role: profile?.role ?? "student",
+        role: normalizeRole(profile?.role),
         status: profile?.status ?? "pending",
         displayName,
     };
@@ -193,7 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: u.email,
             name: u.name,
             profile: null,
-            role: (u.role === "admin" ? "admin" : u.role === "organizer" ? "organizer" : "student") as FSUser["role"],
+            role: normalizeRole(u.role),
             status: "pending",
             displayName: u.name,
         });

@@ -1,6 +1,6 @@
 "use client";
 
-import { GateEntryLog, GateEntryStats, Hackathon, ScanLog, ScoreEntry, Student, Team } from "./types";
+import { GateEntryLog, GateEntryStats, Hackathon, ScanLog, ScoreEntry, Student, Team, Certificate, AuditLog, TeamInvite } from "./types";
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
@@ -168,6 +168,9 @@ const KEY_TEAMS = "hs-teams";
 const KEY_SCORES = "hs-scores";
 const KEY_SCANLOGS = "hs-scanlogs";
 const KEY_GATE_ENTRIES = "hs-gate-entries";
+const KEY_CERTIFICATES = "hs-certificates";
+const KEY_AUDIT_LOGS = "hs-audit-logs";
+const KEY_TEAM_INVITES = "hs-team-invites";
 
 function readLS<T>(key: string, seed: T[]): T[] {
     if (typeof window === "undefined") return seed;
@@ -202,6 +205,45 @@ export const Store = {
         const list = this.getHackathons();
         list.push(h);
         writeLS(KEY_HACKATHONS, list);
+    },
+
+    // ── User bridging (Firebase Auth → localStorage) ────────────────────────
+    /** Returns the currently cached user, if any */
+    getUser(): { id: string; name: string; email: string; role: string } | null {
+        if (typeof window === "undefined") return null;
+        try {
+            const raw = window.localStorage.getItem("hs-current-user");
+            return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+    },
+    setUser(u: { id: string; name: string; email: string; role: string }): void {
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("hs-current-user", JSON.stringify(u));
+        }
+    },
+    /** Get the selected hackathon ID, or default */
+    getSelectedHackathonId(): string {
+        if (typeof window === "undefined") return "campushack-2026";
+        return window.localStorage.getItem("hs-selected-hackathon") ?? "campushack-2026";
+    },
+    /**
+     * Ensures a Student record exists in localStorage for the given Firebase user.
+     * If the user doesn't exist yet, creates one. Returns the student record.
+     */
+    ensureStudent(authUser: { uid: string; id?: string; email: string; name: string; displayName?: string }): Student {
+        const id = authUser.uid || authUser.id || authUser.email;
+        const existing = this.getStudentByEmail(authUser.email) ?? this.getStudent(id);
+        if (existing) return existing;
+
+        const newStudent: Student = {
+            id,
+            name: authUser.displayName ?? authUser.name ?? authUser.email.split("@")[0],
+            email: authUser.email,
+            otpVerified: false,
+            verificationStatus: "pending",
+        };
+        this.upsertStudent(newStudent);
+        return newStudent;
     },
 
     // Students
@@ -393,6 +435,88 @@ export const Store = {
             faceFailures,
         };
     },
+
+    // ── Certificates ──────────────────────────────────────────────────────────
+    getCertificates(hackathonId?: string): Certificate[] {
+        const all = readLS<Certificate>(KEY_CERTIFICATES, []);
+        return hackathonId ? all.filter((c) => c.hackathonId === hackathonId) : all;
+    },
+    getCertificate(id: string): Certificate | undefined {
+        return readLS<Certificate>(KEY_CERTIFICATES, []).find((c) => c.id === id);
+    },
+    getCertificateByCode(code: string): Certificate | undefined {
+        return readLS<Certificate>(KEY_CERTIFICATES, []).find((c) => c.verificationCode === code);
+    },
+    addCertificate(cert: Certificate): void {
+        const list = readLS<Certificate>(KEY_CERTIFICATES, []);
+        list.push(cert);
+        writeLS(KEY_CERTIFICATES, list);
+    },
+    addCertificates(certs: Certificate[]): void {
+        const list = readLS<Certificate>(KEY_CERTIFICATES, []);
+        list.push(...certs);
+        writeLS(KEY_CERTIFICATES, list);
+    },
+
+    // ── Audit Logs ────────────────────────────────────────────────────────────
+    getAuditLogs(hackathonId?: string): AuditLog[] {
+        const all = readLS<AuditLog>(KEY_AUDIT_LOGS, []);
+        return hackathonId ? all.filter((l) => l.hackathonId === hackathonId) : all;
+    },
+    addAuditLog(log: AuditLog): void {
+        const list = readLS<AuditLog>(KEY_AUDIT_LOGS, []);
+        list.unshift(log);
+        if (list.length > 500) list.length = 500; // cap at 500
+        writeLS(KEY_AUDIT_LOGS, list);
+    },
+
+    // ── Team Invites ──────────────────────────────────────────────────────────
+    getTeamInvites(hackathonId?: string): TeamInvite[] {
+        const all = readLS<TeamInvite>(KEY_TEAM_INVITES, []);
+        return hackathonId ? all.filter((i) => i.hackathonId === hackathonId) : all;
+    },
+    getInvitesForEmail(email: string): TeamInvite[] {
+        return readLS<TeamInvite>(KEY_TEAM_INVITES, []).filter(
+            (i) => i.inviteeEmail.toLowerCase() === email.toLowerCase() && i.status === "pending"
+        );
+    },
+    addTeamInvite(invite: TeamInvite): void {
+        const list = readLS<TeamInvite>(KEY_TEAM_INVITES, []);
+        list.push(invite);
+        writeLS(KEY_TEAM_INVITES, list);
+    },
+    updateInviteStatus(inviteId: string, status: TeamInvite["status"]): void {
+        const list = readLS<TeamInvite>(KEY_TEAM_INVITES, []);
+        const inv = list.find((i) => i.id === inviteId);
+        if (inv) inv.status = status;
+        writeLS(KEY_TEAM_INVITES, list);
+    },
+
+    // ── Analytics Helpers ──────────────────────────────────────────────────────
+    getAttendanceByHour(hackathonId?: string): { hour: string; count: number }[] {
+        const entries = this.getGateEntries(hackathonId).filter((e) => e.result === "allowed");
+        const hourMap: Record<string, number> = {};
+        entries.forEach((e) => {
+            const h = new Date(e.timestamp).getHours();
+            const label = `${h.toString().padStart(2, "0")}:00`;
+            hourMap[label] = (hourMap[label] || 0) + 1;
+        });
+        return Object.entries(hourMap)
+            .map(([hour, count]) => ({ hour, count }))
+            .sort((a, b) => a.hour.localeCompare(b.hour));
+    },
+    getMealStats(hackathonId?: string): { meal: string; served: number; blocked: number }[] {
+        const logs = this.getScanLogs(hackathonId);
+        const meals = ["breakfast", "lunch", "dinner"] as const;
+        return meals.map((m) => {
+            const mealLogs = logs.filter((l) => l.type === m);
+            return {
+                meal: m.charAt(0).toUpperCase() + m.slice(1),
+                served: mealLogs.filter((l) => l.result === "valid" || l.result === "allowed").length,
+                blocked: mealLogs.filter((l) => l.result === "already_used" || l.result === "blocked").length,
+            };
+        });
+    },
 };
 
 // ─── Weighted score calculator ────────────────────────────────────────────────
@@ -413,33 +537,126 @@ export function calcWeightedScore(
     );
 }
 
-// ─── QR token generator ───────────────────────────────────────────────────────
-// Format: PREFIX-STUDENTID-HASH (e.g. GATE-stu-001-A3K9NP)
-export function generateQRToken(prefix: string, studentId: string, seed: number): string {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let token = "";
-    let n = Math.abs((studentId.charCodeAt(0) * 7919 + seed * 31337) % 99999);
-    for (let i = 0; i < 6; i++) {
-        token += chars[n % chars.length];
-        n = Math.floor(n / chars.length) + (i + 1) * 13;
+// ─── QR token helpers ─────────────────────────────────────────────────────────
+
+/** Shared secret mixed into the signature (client-only, not true crypto security) */
+const QR_SECRET = "HS2026";
+const QR_EPOCH_SECONDS = 30;       // token rotates every 30 seconds
+const QR_DRIFT_EPOCHS = 1;        // scanner accepts ±1 epoch (≈90s total window)
+
+/** Characters used in the 6-char signature (no ambiguous chars) */
+const SIG_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function computeSignature(parts: string[]): string {
+    const input = parts.join("|") + "|" + QR_SECRET;
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+        hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
     }
-    return `${prefix}-${studentId}-${token}`;
+    hash = Math.abs(hash);
+    let sig = "";
+    for (let i = 0; i < 6; i++) {
+        sig += SIG_CHARS[hash % SIG_CHARS.length];
+        hash = Math.floor(hash / SIG_CHARS.length) + (i + 1) * 13;
+    }
+    return sig;
 }
 
-// ─── Parse student ID from QR token ──────────────────────────────────────────
-// Extracts student ID from format: PREFIX-STUDENTID-HASH
+function currentEpoch(): number {
+    return Math.floor(Date.now() / (QR_EPOCH_SECONDS * 1000));
+}
+
+/**
+ * Generate a dynamic QR token scoped to a hackathon.
+ *
+ * Format: `PREFIX-HACKID-STUDENTID-EPOCH-SIGNATURE`
+ *   e.g.  `GATE-campushack2026-stu001-58193-K4M7NP`
+ *
+ * The epoch changes every 30s, so the QR code changes automatically.
+ */
+export function generateQRToken(
+    prefix: string,
+    studentId: string,
+    seed: number,
+    hackathonId: string = "campushack-2026",
+): string {
+    const epoch = seed > 0 ? seed : currentEpoch(); // allow caller to pass epoch directly
+    // Sanitize hackathonId (remove dashes for compactness in token display)
+    const hackShort = hackathonId.replace(/-/g, "");
+    const sig = computeSignature([prefix, hackShort, studentId, String(epoch)]);
+    return `${prefix}-${hackShort}-${studentId}-${epoch}-${sig}`;
+}
+
+/** Parsed result from a QR token */
+export type QRTokenParsed = {
+    valid: boolean;
+    prefix: string;
+    hackathonId: string;
+    studentId: string;
+    epoch: number;
+    signature: string;
+    expired: boolean;
+    reason?: string;
+};
+
+/**
+ * Validate a scanned QR token:
+ *  1. Correct format (5+ segments)
+ *  2. Signature matches (not tampered)
+ *  3. Epoch within ±1 of current (not expired)
+ */
+export function validateQRToken(token: string): QRTokenParsed {
+    const raw = token.trim().toUpperCase();
+    const parts = raw.split("-");
+
+    const fail = (reason: string): QRTokenParsed => ({
+        valid: false, prefix: "", hackathonId: "", studentId: "",
+        epoch: 0, signature: "", expired: false, reason,
+    });
+
+    // Need at least: PREFIX - HACKID - STUDENTID - EPOCH - SIGNATURE
+    // But studentId may itself contain dashes (e.g. "stu-001")
+    if (parts.length < 4) return fail("Token too short");
+
+    const prefix = parts[0];                     // GATE / MEALBREAKFAST etc.
+    const signature = parts[parts.length - 1];   // last segment = 6-char sig
+    const epochStr = parts[parts.length - 2];    // second-to-last = epoch
+    const epoch = parseInt(epochStr, 10);
+    if (isNaN(epoch)) return fail("Invalid epoch");
+
+    // hackId = parts[1], studentId = everything between parts[1] and epoch
+    const hackId = parts[1];
+    const studentId = parts.slice(2, -2).join("-");
+    if (!studentId) return fail("Missing student ID");
+
+    // Verify signature
+    const expectedSig = computeSignature([prefix, hackId, studentId, epochStr]);
+    if (signature !== expectedSig) {
+        return { valid: false, prefix, hackathonId: hackId, studentId, epoch, signature, expired: false, reason: "Invalid signature" };
+    }
+
+    // Check expiry (±1 epoch drift)
+    const now = currentEpoch();
+    const drift = Math.abs(now - epoch);
+    if (drift > QR_DRIFT_EPOCHS) {
+        return { valid: false, prefix, hackathonId: hackId, studentId, epoch, signature, expired: true, reason: "QR code expired" };
+    }
+
+    return { valid: true, prefix, hackathonId: hackId, studentId, epoch, signature, expired: false };
+}
+
+/**
+ * Backward-compat: extract student ID from any token format.
+ * Works with both old (PREFIX-STUDENTID-HASH) and new (PREFIX-HACKID-STUDENTID-EPOCH-SIG) formats.
+ */
 export function parseStudentIdFromToken(token: string): string | null {
-    // Format: PREFIX-studentId-HASH
-    // studentId format: "stu-XXX" (contains a dash itself)
-    // So we split by "-" and reconstruct
+    const parsed = validateQRToken(token);
+    if (parsed.studentId) return parsed.studentId;
+
+    // Fallback for old format: PREFIX-STUDENTID-HASH (6 char hash at end)
     const parts = token.split("-");
-    if (parts.length < 4) return null; // needs at least PREFIX-stu-XXX-HASH
-    // parts[0] = prefix (GATE, MEAL-BREAKFAST, etc.)
-    // Middle parts = student ID (e.g. "stu", "001")
-    // Last part = hash (6 chars)
+    if (parts.length < 3) return null;
     const hash = parts[parts.length - 1];
     if (hash.length !== 6) return null;
-    // Student ID is everything between prefix and hash
-    const studentId = parts.slice(1, -1).join("-");
-    return studentId || null;
+    return parts.slice(1, -1).join("-") || null;
 }

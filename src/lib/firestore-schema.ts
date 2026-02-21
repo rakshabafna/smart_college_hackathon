@@ -14,6 +14,9 @@ export interface FSUser {
     collegeIdUrl?: string;
     aadhaarMasked?: string;
     aadhaarUrl?: string;
+    aadhaarMaskedUrl?: string;
+    aadhaarLast4?: string;
+    aadhaarImageUrl?: string;
     selfieUrl?: string;
     createdAt: Timestamp;
 }

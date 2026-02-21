@@ -11,6 +11,7 @@ import AuthGuard from "../components/AuthGuard";
 type JudgeTab = "round1" | "final";
 
 const JUDGE_ID = "judge-001";
+const HACK_ID = "campushack-2026";
 
 const CRITERIA = [
   { key: "innovation" as const, label: "🚀 Innovation", weight: 25 },
@@ -32,7 +33,6 @@ export default function JudgePage() {
 
 function JudgeContent() {
   const [tab, setTab] = useState<JudgeTab>("round1");
-  const [hackId, setHackId] = useState("campushack-2026");
   const [teams, setTeams] = useState<Team[]>([]);
   const [scores, setScores] = useState<ScoreEntry[]>([]);
   const [editingTeam, setEditingTeam] = useState<string | null>(null);
@@ -40,11 +40,11 @@ function JudgeContent() {
   const [toast, setToast] = useState<string | null>(null);
 
   const refresh = () => {
-    setTeams(Store.getTeams(hackId));
-    setScores(Store.getScores(hackId));
+    setTeams(Store.getTeams(HACK_ID));
+    setScores(Store.getScores(HACK_ID));
   };
 
-  useEffect(() => { refresh(); }, [hackId]);
+  useEffect(() => { refresh(); }, []);
 
   const openEdit = (teamId: string) => {
     const existing = scores.find((s) => s.teamId === teamId && s.round === tab);
@@ -58,7 +58,7 @@ function JudgeContent() {
     const entry: ScoreEntry = {
       id: `sc-${editingTeam}-${tab}`,
       teamId: editingTeam,
-      hackathonId: hackId,
+      hackathonId: HACK_ID,
       judgeId: JUDGE_ID,
       round: tab,
       ...draft,
@@ -83,8 +83,6 @@ function JudgeContent() {
 
   const liveWs = calcWeightedScore(draft.innovation, draft.feasibility, draft.techDepth, draft.presentation, draft.socialImpact);
 
-  const selectedHackathon = Store.getHackathon(hackId);
-
   return (
     <div className="mx-auto max-w-6xl px-5 pb-16 pt-8 md:px-8">
       {toast && <Toast message={toast} tone="emerald" onDone={() => setToast(null)} />}
@@ -92,15 +90,12 @@ function JudgeContent() {
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Judge Workspace</h1>
-          <p className="mt-1 text-sm text-slate-500">{selectedHackathon?.title ?? "Select a hackathon"} — Score teams and see the live leaderboard.</p>
+          <p className="mt-1 text-sm text-slate-500">CampusHack 2026 — Score teams and see the live leaderboard.</p>
         </div>
         <button onClick={shortlistTop} className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700">
           🏆 Shortlist top 40%
         </button>
       </header>
-
-      {/* Hackathon selector */}
-      <HackathonSelector selected={hackId} onSelect={(id) => setHackId(id)} />
 
       {/* Round tabs */}
       <div className="mb-5 flex gap-2">

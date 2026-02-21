@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useAuth } from "../AuthContext";
 import { googleProvider, githubProvider } from "../../lib/auth-providers";
+import { Store } from "../lib/store";
 
 type FormData = {
   email: string;
@@ -26,6 +27,7 @@ function dashboardFor(role: string): string {
 
 export default function SignInPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signInWithEmail, signInWithOAuth } = useAuth();
   const [firebaseError, setFirebaseError] = useState("");
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
@@ -41,7 +43,14 @@ export default function SignInPage() {
     setFirebaseError("");
     try {
       const appUser = await signInWithEmail(data.email, data.password);
-      router.push(dashboardFor(appUser.role));
+      // Sync to local Store
+      Store.ensureStudent(appUser.uid, appUser.displayName, appUser.email);
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        router.push(decodeURIComponent(redirect));
+      } else {
+        router.push(dashboardFor(appUser.role));
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Sign-in failed.";
       if (msg.includes("user-not-found") || msg.includes("invalid-credential")) {
@@ -63,7 +72,12 @@ export default function SignInPage() {
     try {
       const provider = providerType === "google" ? googleProvider : githubProvider;
       const { appUser, isNewUser } = await signInWithOAuth(provider);
-      if (isNewUser) {
+      // Sync to local Store
+      Store.ensureStudent(appUser.uid, appUser.displayName, appUser.email);
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        router.push(decodeURIComponent(redirect));
+      } else if (isNewUser) {
         router.push("/student/verification");
       } else {
         router.push(dashboardFor(appUser.role));

@@ -6,7 +6,6 @@ import { generateQRToken, Store } from "../../lib/store";
 import QRDisplay from "../../components/QRDisplay";
 import StatusBadge from "../../components/StatusBadge";
 import type { MealType } from "../../lib/types";
-import HackathonSelector from "../../components/HackathonSelector";
 
 const MEALS: { type: MealType; label: string; window: string; emoji: string }[] = [
   { type: "Breakfast", label: "Breakfast", window: "7:00 AM – 9:00 AM", emoji: "🍳" },
@@ -18,23 +17,22 @@ type MealControlStatus = "closed" | "open" | "done";
 
 export default function StudentPassPage() {
   const { user } = useAuth();
-  const [hackId, setHackId] = useState("campushack-2026");
   const [mealControl, setMealControl] = useState<Record<MealType, MealControlStatus>>({
     Breakfast: "closed",
     Lunch: "closed",
     Dinner: "closed",
   });
 
-  // Poll meal control state every 5 seconds so student sees real-time updates when organizer opens a meal
+  // Poll meal control state every 5 seconds
   useEffect(() => {
     const refresh = () => {
-      const ctrl = Store.getMealControl(hackId);
+      const ctrl = Store.getMealControl();
       setMealControl(ctrl);
     };
     refresh();
     const id = setInterval(refresh, 5000);
     return () => clearInterval(id);
-  }, [hackId]);
+  }, []);
 
   const gateToken = user ? generateQRToken("GATE", user.id, 0, hackId) : "";
 
@@ -58,11 +56,6 @@ export default function StudentPassPage() {
           Gate QR refreshes every 30 seconds · Meal QRs are released by the organizer in order: Breakfast → Lunch → Dinner
         </p>
       </header>
-
-      {/* Hackathon selector */}
-      <div className="mb-5">
-        <HackathonSelector selected={hackId} onSelect={(id) => setHackId(id)} compact />
-      </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* ── Gate pass ── */}
@@ -103,10 +96,10 @@ export default function StudentPassPage() {
               <div
                 key={meal.type}
                 className={`rounded-2xl p-4 shadow-sm ring-1 transition-all duration-300 ${status === "open"
-                  ? "bg-white ring-emerald-300 shadow-emerald-50"
-                  : status === "done"
-                    ? "bg-slate-50 ring-slate-200 opacity-60"
-                    : "bg-slate-50 ring-slate-100 opacity-50"
+                    ? "bg-white ring-emerald-300 shadow-emerald-50"
+                    : status === "done"
+                      ? "bg-slate-50 ring-slate-200 opacity-60"
+                      : "bg-slate-50 ring-slate-100 opacity-50"
                   }`}
               >
                 {/* Header row */}

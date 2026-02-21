@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
+import { Store } from "./lib/store";
 
 type NavItem = { href: string; label: string };
 
@@ -48,6 +49,8 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const [isShortlisted, setIsShortlisted] = useState(false);
+  const [inviteCount, setInviteCount] = useState(0);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -69,15 +72,27 @@ export default function Navbar() {
     <>
       {navItems.map((item) => {
         const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+        const showDot = item.label === "My Results" && isShortlisted;
         return (
           <Link
             key={item.href}
             href={item.href}
             onClick={onClick}
-            className={`rounded-full px-3 py-1 text-[0.85rem] transition-colors ${active ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+            className={`relative rounded-full px-3 py-1 text-[0.85rem] transition-colors ${active ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
               }`}
           >
             {item.label}
+            {item.label === "Invites" && inviteCount > 0 && (
+              <span className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {inviteCount}
+              </span>
+            )}
+            {showDot && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              </span>
+            )}
           </Link>
         );
       })}

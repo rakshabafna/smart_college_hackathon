@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { sendEmailVerification } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { useAuth } from "../AuthContext";
 import { googleProvider, githubProvider } from "../../lib/auth-providers";
+import { Store } from "../lib/store";
 
 type FormData = {
   name: string;
@@ -20,6 +21,7 @@ type FormData = {
 
 export default function SignUpPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { signUpWithEmail, signInWithOAuth } = useAuth();
   const [firebaseError, setFirebaseError] = useState("");
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
@@ -35,13 +37,15 @@ export default function SignUpPage() {
   const onSubmit = async (data: FormData) => {
     setFirebaseError("");
     try {
-      await signUpWithEmail(data.email, data.password, {
+      const appUser = await signUpWithEmail(data.email, data.password, {
         displayName: data.name,
         phone: data.phone,
-        role: data.role,
+        role: "student",
       });
+      // Sync to local Store for team displays
+      Store.ensureStudent(appUser.uid, data.name, data.email);
       // Send Firebase email verification
-      if (auth.currentUser) {
+      if (auth && auth.currentUser) {
         await sendEmailVerification(auth.currentUser);
       }
       router.push(data.role === "organiser" ? "/admin" : "/student/verify");
@@ -66,8 +70,13 @@ export default function SignUpPage() {
     setOauthLoading(providerType);
     try {
       const provider = providerType === "google" ? googleProvider : githubProvider;
-      const { isNewUser } = await signInWithOAuth(provider);
-      if (isNewUser) {
+      const { appUser, isNewUser } = await signInWithOAuth(provider);
+      // Sync to local Store
+      Store.ensureStudent(appUser.uid, appUser.displayName, appUser.email);
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        router.push(decodeURIComponent(redirect));
+      } else if (isNewUser) {
         router.push("/student/verification");
       } else {
         router.push("/");
@@ -301,9 +310,8 @@ export default function SignUpPage() {
         </form>
 
         <p className="mt-4 text-xs text-slate-500">
-          <strong>Students:</strong> After sign-up you&apos;ll complete verification (college ID, Aadhaar, selfie &amp; OTP).
-          <br />
-          <strong>Organisers:</strong> You&apos;ll go directly to the admin dashboard to create hackathons.
+          After sign-up you&apos;ll complete student verification (college ID, masked Aadhaar,
+          selfie &amp; OTP). Only verified students can register for hackathons.
         </p>
       </div>
     </div>

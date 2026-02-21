@@ -8,8 +8,7 @@ import FaceVerification from "../../components/FaceVerification";
 import HackathonSelector from "../../components/HackathonSelector";
 import AuthGuard from "../../components/AuthGuard";
 
-/* ─── Flow steps ───────────────────────────────────────────────────────────── */
-type Step = "scan" | "lookup" | "face" | "result";
+type ScanResult = "allowed" | "blocked_duplicate" | "blocked_unknown" | null;
 
 /* ─── Resolved student from QR code ────────────────────────────────────────── */
 type ResolvedStudent = {
@@ -58,20 +57,16 @@ function GateEntryContent() {
 
   useEffect(() => { refreshData(); }, [refreshData]);
 
-  /* ── Reset to scan step ─────────────────────────────────────────────────── */
-  const resetFlow = () => {
-    setStep("scan");
-    setScannedCode("");
-    setManualCode("");
-    setResolved(null);
-    setEntryResult(null);
-    setFaceScore(0);
-    setScannerActive(true);
+  const refreshLogs = () => {
+    const all = Store.getScanLogs().filter((l) => l.type === "gate");
+    setLogs(all.slice(0, 10));
+    const unique = new Set(all.filter((l) => l.result === "allowed").map((l) => l.studentId));
+    const blocked = all.filter((l) => l.result === "blocked").length;
+    setStats({ total: all.length, unique: unique.size, blocked });
   };
 
-  /* ── Lookup student from scanned code ───────────────────────────────────── */
-  const processCode = useCallback((code: string) => {
-    setScannerActive(false);
+  const handleScan = () => {
+    if (!code.trim()) return;
     const stripped = code.trim().toUpperCase();
     setScannedCode(stripped);
     setStep("lookup");
@@ -264,46 +259,31 @@ function GateEntryContent() {
     if (navigator.vibrate) {
       navigator.vibrate(verified ? [100] : [200, 50, 200]);
     }
+    refreshLogs();
+    setCode("");
+    setTimeout(() => setResult(null), 4000);
   };
 
-  /* ── Handle manual code submission ──────────────────────────────────────── */
-  const handleManualScan = () => {
-    if (!manualCode.trim()) return;
-    processCode(manualCode.trim());
-  };
-
-  /* ── Stats cards ───────────────────────────────────────────────────────── */
-  const statCards = [
-    { label: "Total scans", value: stats.totalScans, icon: "📊", tone: "" },
-    { label: "Entries", value: stats.uniqueEntries, icon: "🟢", tone: "text-emerald-700" },
-    { label: "Duplicates", value: stats.duplicatesBlocked, icon: "🔁", tone: "text-amber-600" },
-    { label: "Face fails", value: stats.faceFailures, icon: "❌", tone: "text-rose-600" },
-  ];
-
-  const rc = entryResult ? RESULT_CONFIG[entryResult] : null;
+  const resultBg = result === "allowed" ? "bg-emerald-500" : result ? "bg-rose-500" : "";
+  const resultLabel = result === "allowed" ? "🟢 Entry Allowed" : result === "blocked_duplicate" ? "🔴 Block — Already Scanned" : result === "blocked_unknown" ? "🔴 Block — Invalid Code" : null;
 
   return (
     <div className="mx-auto max-w-2xl px-5 pb-16 pt-8 md:px-8">
-      {/* Header */}
       <header className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-slate-900">🚪 Gate Entry Scanner</h1>
-        <p className="mt-1 text-xs text-slate-500">
-          Scan QR → Verify face → Attendance marked automatically
-        </p>
+        <h1 className="text-2xl font-semibold text-slate-900">Gate Scanner</h1>
+        <p className="mt-1 text-xs text-slate-500">Scan or type a student gate QR code to validate entry.</p>
       </header>
 
-      {/* Hackathon selector */}
-      <div className="mb-4 flex justify-center">
-        <HackathonSelector selected={hackId} onSelect={(id) => setHackId(id)} compact />
-      </div>
-
-      {/* Stats */}
-      <div className="mb-5 grid grid-cols-4 gap-2">
-        {statCards.map((s) => (
-          <div key={s.label} className="rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-slate-100 text-center">
-            <p className="text-lg mb-0.5">{s.icon}</p>
-            <p className={`text-xl font-bold ${s.tone || "text-slate-900"}`}>{s.value}</p>
-            <p className="text-[9px] font-semibold uppercase text-slate-400 mt-0.5">{s.label}</p>
+      {/* stats */}
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        {[
+          { label: "Total scans", value: stats.total },
+          { label: "Unique entries", value: stats.unique, tone: "text-emerald-700" },
+          { label: "Blocked", value: stats.blocked, tone: "text-rose-600" },
+        ].map((s) => (
+          <div key={s.label} className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-100 text-center">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">{s.label}</p>
+            <p className={`text-2xl font-semibold ${s.tone ?? "text-slate-900"}`}>{s.value}</p>
           </div>
         ))}
       </div>
@@ -411,48 +391,31 @@ function GateEntryContent() {
             onResult={handleFaceResult}
             onCancel={resetFlow}
           />
-        </div>
-      )}
-
-      {/* ─── STEP: RESULT ──────────────────────────────────────────────── */}
-      {step === "result" && rc && (
-        <div className="flex flex-col items-center gap-4">
-          {/* Result banner */}
-          <div className={`w-full rounded-2xl bg-gradient-to-r ${rc.bg} px-6 py-6 text-center shadow-lg animate-[fadeInUp_0.4s_ease-out]`}>
-            <p className="text-4xl mb-2">{rc.icon}</p>
-            <p className="text-xl font-bold text-white">{rc.label}</p>
-            {resolved && (
-              <p className="mt-2 text-sm text-white/80 font-medium">
-                {resolved.name} · {scannedCode}
-              </p>
-            )}
-            {faceScore > 0 && (
-              <p className="mt-1 text-xs text-white/60">Face match: {faceScore}%</p>
-            )}
-            <p className="mt-1 text-xs text-white/50">{new Date().toLocaleTimeString()}</p>
-          </div>
-
-          {/* Scan next button */}
-          <button
-            onClick={resetFlow}
-            className="rounded-full bg-slate-900 px-8 py-3 text-sm font-semibold text-white shadow-lg hover:bg-black active:scale-95 transition-all"
-          >
-            🔄 Scan Next Student
+          <button onClick={handleScan} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-black">
+            Check
           </button>
         </div>
+        <p className="mt-1.5 text-[11px] text-slate-400">Press Enter or click Check. Code format: GATE-XXXXXX</p>
+      </div>
+
+      {/* Result banner */}
+      {result && (
+        <div className={`mt-4 rounded-2xl ${resultBg} px-6 py-4 text-center`}>
+          <p className="text-xl font-semibold text-white">{resultLabel}</p>
+          {lastScan && <p className="mt-1 text-sm text-white/80">{lastScan.name} · {lastScan.code} · {lastScan.time}</p>}
+        </div>
       )}
 
-      {/* ─── Recent scan log ───────────────────────────────────────────── */}
+      {/* Scan log */}
       {logs.length > 0 && (
         <section className="mt-6">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recent gate entries</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recent scans</h2>
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-100 overflow-hidden">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase text-slate-400">
                   <th className="px-3 py-2 text-left">Student</th>
                   <th className="px-3 py-2 text-left">Time</th>
-                  <th className="px-3 py-2 text-left">Face</th>
                   <th className="px-3 py-2 text-left">Result</th>
                 </tr>
               </thead>
@@ -500,14 +463,6 @@ function GateEntryContent() {
           </div>
         </section>
       )}
-
-      {/* Fade-in animation */}
-      <style jsx>{`
-                @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(16px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
     </div>
   );
 }

@@ -1,0 +1,158 @@
+
+# ============================================================
+# SOFTWARE REQUIREMENTS SPECIFICATION (SRS)
+# Smart College Hackathon Management & Verification System
+# With QR-Based Access and Evaluation
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. INTRODUCTION
+# ------------------------------------------------------------
+
+# 1.1 Purpose
+# This system provides a secure and automated platform to manage
+# hackathons including registration, student verification,
+# PPT submission, evaluation, QR-based entry, food tracking,
+# and result generation.
+
+# 1.2 Scope
+# The platform will digitize the entire hackathon lifecycle:
+# - Student registration and identity verification
+# - Problem statement selection
+# - PPT submission and evaluation
+# - QR-based entry management
+# - QR-based food management
+# - Final submission and evaluation
+# - Certificate generation and reporting
+
+# 1.3 Definitions
+# QR Code: Machine-readable code used for student identification
+# OTP: One Time Password for secure verification
+# Admin: Hackathon organizer managing the system
+# Judge: Evaluator responsible for scoring submissions
+# Student: Hackathon participant
+
+# ------------------------------------------------------------
+# 2. OVERALL DESCRIPTION
+# ------------------------------------------------------------
+
+# 2.1 Product Perspective
+# The system is a client-server web/mobile application consisting of:
+# - Frontend (Web/Mobile)
+# - Backend Server
+# - Database
+# - QR Code Generation Module
+# - Face Verification Module
+
+# 2.2 Product Functions
+# The system will provide:
+# - Student registration and login
+# - Identity verification using ID, Aadhaar (masked), and selfie
+# - Hackathon creation and management
+# - PPT upload and submission lock after deadline
+# - Automated evaluation dashboard
+# - Dynamic QR generation for entry and meals
+# - Attendance tracking
+# - Food consumption tracking
+# - Final evaluation and leaderboard generation
+# - Report and certificate generation
+
+# 2.3 User Classes
+# Student:
+# - Register and verify identity
+# - Upload PPT and GitHub link
+# - Access QR codes
+
+# Admin:
+# - Verify students
+# - Create hackathon
+# - Generate QR codes
+# - View reports
+
+# Judge:
+# - View submissions
+# - Evaluate teams
+
+# Staff:
+# - Scan QR codes
+# - Verify entry and meals
+
+# ------------------------------------------------------------
+# 3. FUNCTIONAL REQUIREMENTS
+# ------------------------------------------------------------
+
+# FR1: System shall allow student registration
+# FR2: System shall allow upload of ID card
+# FR3: System shall perform OTP verification
+# FR4: System shall perform face verification
+# FR5: Admin shall approve verified students
+# FR6: System shall allow PPT submission
+# FR7: System shall lock submission after deadline
+# FR8: System shall generate unique dynamic QR code
+# FR9: System shall verify QR code at entry
+# FR10: System shall prevent duplicate entry
+# FR11: System shall generate food QR codes
+# FR12: System shall track food consumption
+# FR13: Judge shall evaluate teams
+# FR14: System shall generate leaderboard
+# FR15: Admin shall generate reports and certificates
+
+# ------------------------------------------------------------
+# 4. NON-FUNCTIONAL REQUIREMENTS
+# ------------------------------------------------------------
+
+# Performance Requirements:
+# - System shall support 10,000+ users
+# - QR verification shall complete within 2 seconds
+
+# Security Requirements:
+# - Aadhaar data shall be masked
+# - Data shall be encrypted
+# - Secure authentication shall be used
+
+# Reliability Requirements:
+# - System uptime shall be at least 99%
+
+# Usability Requirements:
+# - User interface shall be simple and easy to use
+
+# Scalability Requirements:
+# - System shall support multiple hackathons
+
+# ------------------------------------------------------------
+# 5. SYSTEM ARCHITECTURE
+# ------------------------------------------------------------
+
+# Architecture Type: Client-Server Architecture
+
+# Components:
+# - Frontend (Web/Mobile)
+# - Backend Server
+# - Database
+# - QR Generator
+# - Face Verification System
+
+# ------------------------------------------------------------
+# 6. DATA REQUIREMENTS
+# ------------------------------------------------------------
+
+# The system shall store:
+# - Student information
+# - Hackathon information
+# - Submission data
+# - QR data
+# - Evaluation data
+
+# ------------------------------------------------------------
+# 7. FUTURE ENHANCEMENTS
+# ------------------------------------------------------------
+
+# - Face recognition entry system
+# - AI-based PPT evaluation
+# - AI-based plagiarism detection
+# - Mobile app support
+# - Sponsor tracking
+
+# ------------------------------------------------------------
+# END OF SRS DOCUMENT
+# ------------------------------------------------------------

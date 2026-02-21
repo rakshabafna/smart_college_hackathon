@@ -312,6 +312,37 @@ export const Store = {
         if (typeof window !== "undefined")
             window.localStorage.setItem("hs-meal-control", JSON.stringify(control));
     },
+
+    // ── Student hackathon registration ──────────────────────────────────────
+    getRegistrations(): string[] {
+        if (typeof window === "undefined") return [];
+        try {
+            const raw = window.localStorage.getItem("hs-registrations");
+            return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+    },
+    isRegistered(hackathonId: string): boolean {
+        return this.getRegistrations().includes(hackathonId);
+    },
+    registerForHackathon(hackathonId: string): void {
+        if (typeof window === "undefined") return;
+        const regs = this.getRegistrations();
+        if (regs.includes(hackathonId)) return; // already registered
+        regs.push(hackathonId);
+        window.localStorage.setItem("hs-registrations", JSON.stringify(regs));
+        // Increment applicant count
+        const hackathons = this.getHackathons();
+        const h = hackathons.find((h) => h.id === hackathonId);
+        if (h) {
+            h.applicants += 1;
+            writeLS(KEY_HACKATHONS, hackathons);
+        }
+    },
+    unregisterFromHackathon(hackathonId: string): void {
+        if (typeof window === "undefined") return;
+        const regs = this.getRegistrations().filter((id) => id !== hackathonId);
+        window.localStorage.setItem("hs-registrations", JSON.stringify(regs));
+    },
 };
 
 // ─── Weighted score calculator ────────────────────────────────────────────────

@@ -16,6 +16,7 @@ const NAV_BY_ROLE: Record<AppRole | "guest", NavItem[]> = {
   student: [
     { href: "/", label: "Home" },
     { href: "/hackathons", label: "Hackathons" },
+    { href: "/student/invites", label: "Invites" },
     { href: "/student/verification", label: "Verification" },
     { href: "/student/pass", label: "My QR Pass" },
   ],

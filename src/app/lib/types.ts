@@ -196,30 +196,3 @@ export type ScanLog = {
 
 export type MealStatus = "Used" | "Pending" | "Upcoming";
 export type MealType = "Breakfast" | "Lunch" | "Dinner";
-
-// ─── Gate Entry Management ────────────────────────────────────────────────────
-export type GateEntryResult =
-    | "allowed"
-    | "blocked_duplicate"
-    | "blocked_unverified"
-    | "blocked_face_fail"
-    | "blocked_unknown";
-
-export type GateEntryLog = {
-    id: string;
-    studentId: string;
-    studentName: string;
-    hackathonId: string;
-    scannedCode: string;
-    faceVerified: boolean;
-    faceScore: number;
-    result: GateEntryResult;
-    timestamp: string;
-};
-
-export type GateEntryStats = {
-    totalScans: number;
-    uniqueEntries: number;
-    duplicatesBlocked: number;
-    faceFailures: number;
-};

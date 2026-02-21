@@ -7,8 +7,7 @@ import QRScannerCamera from "../../components/QRScannerCamera";
 import FaceVerification from "../../components/FaceVerification";
 import HackathonSelector from "../../components/HackathonSelector";
 
-/* ─── Flow steps ───────────────────────────────────────────────────────────── */
-type Step = "scan" | "lookup" | "face" | "result";
+type ScanResult = "allowed" | "blocked_duplicate" | "blocked_unknown" | null;
 
 /* ─── Resolved student from QR code ────────────────────────────────────────── */
 type ResolvedStudent = {
@@ -19,49 +18,18 @@ type ResolvedStudent = {
   verified: boolean;
 };
 
-/* ─── Result banner config ─────────────────────────────────────────────────── */
-const RESULT_CONFIG: Record<GateEntryResult, { bg: string; icon: string; label: string }> = {
-  allowed: { bg: "from-emerald-500 to-emerald-600", icon: "✅", label: "Entry Allowed" },
-  blocked_duplicate: { bg: "from-amber-500 to-orange-500", icon: "🔁", label: "Already Entered — Duplicate Blocked" },
-  blocked_unverified: { bg: "from-rose-500 to-rose-600", icon: "🚫", label: "Not Verified — Entry Denied" },
-  blocked_face_fail: { bg: "from-rose-500 to-rose-600", icon: "❌", label: "Face Mismatch — Entry Denied" },
-  blocked_unknown: { bg: "from-slate-600 to-slate-700", icon: "❓", label: "Invalid QR Code" },
-};
+  useEffect(() => { refreshLogs(); }, []);
 
-export default function GateEntryPage() {
-  const [step, setStep] = useState<Step>("scan");
-  const [hackId, setHackId] = useState("campushack-2026");
-  const [scannedCode, setScannedCode] = useState("");
-  const [manualCode, setManualCode] = useState("");
-  const [resolved, setResolved] = useState<ResolvedStudent | null>(null);
-  const [entryResult, setEntryResult] = useState<GateEntryResult | null>(null);
-  const [faceScore, setFaceScore] = useState(0);
-  const [logs, setLogs] = useState<GateEntryLog[]>([]);
-  const [stats, setStats] = useState<GateEntryStats>({ totalScans: 0, uniqueEntries: 0, duplicatesBlocked: 0, faceFailures: 0 });
-  const [scannerActive, setScannerActive] = useState(true);
-  const [useManual, setUseManual] = useState(false);
-
-  const refreshData = useCallback(() => {
-    setLogs(Store.getGateEntries(hackId).slice(0, 15));
-    setStats(Store.getGateStats(hackId));
-  }, [hackId]);
-
-  useEffect(() => { refreshData(); }, [refreshData]);
-
-  /* ── Reset to scan step ─────────────────────────────────────────────────── */
-  const resetFlow = () => {
-    setStep("scan");
-    setScannedCode("");
-    setManualCode("");
-    setResolved(null);
-    setEntryResult(null);
-    setFaceScore(0);
-    setScannerActive(true);
+  const refreshLogs = () => {
+    const all = Store.getScanLogs().filter((l) => l.type === "gate");
+    setLogs(all.slice(0, 10));
+    const unique = new Set(all.filter((l) => l.result === "allowed").map((l) => l.studentId));
+    const blocked = all.filter((l) => l.result === "blocked").length;
+    setStats({ total: all.length, unique: unique.size, blocked });
   };
 
-  /* ── Lookup student from scanned code ───────────────────────────────────── */
-  const processCode = useCallback((code: string) => {
-    setScannerActive(false);
+  const handleScan = () => {
+    if (!code.trim()) return;
     const stripped = code.trim().toUpperCase();
     setScannedCode(stripped);
     setStep("lookup");
@@ -200,46 +168,31 @@ export default function GateEntryPage() {
     if (navigator.vibrate) {
       navigator.vibrate(verified ? [100] : [200, 50, 200]);
     }
+    refreshLogs();
+    setCode("");
+    setTimeout(() => setResult(null), 4000);
   };
 
-  /* ── Handle manual code submission ──────────────────────────────────────── */
-  const handleManualScan = () => {
-    if (!manualCode.trim()) return;
-    processCode(manualCode.trim());
-  };
-
-  /* ── Stats cards ───────────────────────────────────────────────────────── */
-  const statCards = [
-    { label: "Total scans", value: stats.totalScans, icon: "📊", tone: "" },
-    { label: "Entries", value: stats.uniqueEntries, icon: "🟢", tone: "text-emerald-700" },
-    { label: "Duplicates", value: stats.duplicatesBlocked, icon: "🔁", tone: "text-amber-600" },
-    { label: "Face fails", value: stats.faceFailures, icon: "❌", tone: "text-rose-600" },
-  ];
-
-  const rc = entryResult ? RESULT_CONFIG[entryResult] : null;
+  const resultBg = result === "allowed" ? "bg-emerald-500" : result ? "bg-rose-500" : "";
+  const resultLabel = result === "allowed" ? "🟢 Entry Allowed" : result === "blocked_duplicate" ? "🔴 Block — Already Scanned" : result === "blocked_unknown" ? "🔴 Block — Invalid Code" : null;
 
   return (
     <div className="mx-auto max-w-2xl px-5 pb-16 pt-8 md:px-8">
-      {/* Header */}
       <header className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-slate-900">🚪 Gate Entry Scanner</h1>
-        <p className="mt-1 text-xs text-slate-500">
-          Scan QR → Verify face → Attendance marked automatically
-        </p>
+        <h1 className="text-2xl font-semibold text-slate-900">Gate Scanner</h1>
+        <p className="mt-1 text-xs text-slate-500">Scan or type a student gate QR code to validate entry.</p>
       </header>
 
-      {/* Hackathon selector */}
-      <div className="mb-4 flex justify-center">
-        <HackathonSelector selected={hackId} onSelect={(id) => setHackId(id)} compact />
-      </div>
-
-      {/* Stats */}
-      <div className="mb-5 grid grid-cols-4 gap-2">
-        {statCards.map((s) => (
-          <div key={s.label} className="rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-slate-100 text-center">
-            <p className="text-lg mb-0.5">{s.icon}</p>
-            <p className={`text-xl font-bold ${s.tone || "text-slate-900"}`}>{s.value}</p>
-            <p className="text-[9px] font-semibold uppercase text-slate-400 mt-0.5">{s.label}</p>
+      {/* stats */}
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        {[
+          { label: "Total scans", value: stats.total },
+          { label: "Unique entries", value: stats.unique, tone: "text-emerald-700" },
+          { label: "Blocked", value: stats.blocked, tone: "text-rose-600" },
+        ].map((s) => (
+          <div key={s.label} className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-100 text-center">
+            <p className="text-[10px] font-semibold uppercase text-slate-400">{s.label}</p>
+            <p className={`text-2xl font-semibold ${s.tone ?? "text-slate-900"}`}>{s.value}</p>
           </div>
         ))}
       </div>
@@ -347,101 +300,51 @@ export default function GateEntryPage() {
             onResult={handleFaceResult}
             onCancel={resetFlow}
           />
-        </div>
-      )}
-
-      {/* ─── STEP: RESULT ──────────────────────────────────────────────── */}
-      {step === "result" && rc && (
-        <div className="flex flex-col items-center gap-4">
-          {/* Result banner */}
-          <div className={`w-full rounded-2xl bg-gradient-to-r ${rc.bg} px-6 py-6 text-center shadow-lg animate-[fadeInUp_0.4s_ease-out]`}>
-            <p className="text-4xl mb-2">{rc.icon}</p>
-            <p className="text-xl font-bold text-white">{rc.label}</p>
-            {resolved && (
-              <p className="mt-2 text-sm text-white/80 font-medium">
-                {resolved.name} · {scannedCode}
-              </p>
-            )}
-            {faceScore > 0 && (
-              <p className="mt-1 text-xs text-white/60">Face match: {faceScore}%</p>
-            )}
-            <p className="mt-1 text-xs text-white/50">{new Date().toLocaleTimeString()}</p>
-          </div>
-
-          {/* Scan next button */}
-          <button
-            onClick={resetFlow}
-            className="rounded-full bg-slate-900 px-8 py-3 text-sm font-semibold text-white shadow-lg hover:bg-black active:scale-95 transition-all"
-          >
-            🔄 Scan Next Student
+          <button onClick={handleScan} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-black">
+            Check
           </button>
         </div>
+        <p className="mt-1.5 text-[11px] text-slate-400">Press Enter or click Check. Code format: GATE-XXXXXX</p>
+      </div>
+
+      {/* Result banner */}
+      {result && (
+        <div className={`mt-4 rounded-2xl ${resultBg} px-6 py-4 text-center`}>
+          <p className="text-xl font-semibold text-white">{resultLabel}</p>
+          {lastScan && <p className="mt-1 text-sm text-white/80">{lastScan.name} · {lastScan.code} · {lastScan.time}</p>}
+        </div>
       )}
 
-      {/* ─── Recent scan log ───────────────────────────────────────────── */}
+      {/* Scan log */}
       {logs.length > 0 && (
         <section className="mt-6">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recent gate entries</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recent scans</h2>
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-100 overflow-hidden">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase text-slate-400">
                   <th className="px-3 py-2 text-left">Student</th>
                   <th className="px-3 py-2 text-left">Time</th>
-                  <th className="px-3 py-2 text-left">Face</th>
                   <th className="px-3 py-2 text-left">Result</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log) => {
-                  const resultColors: Record<GateEntryResult, string> = {
-                    allowed: "bg-emerald-50 text-emerald-700",
-                    blocked_duplicate: "bg-amber-50 text-amber-700",
-                    blocked_unverified: "bg-rose-50 text-rose-700",
-                    blocked_face_fail: "bg-rose-50 text-rose-700",
-                    blocked_unknown: "bg-slate-100 text-slate-600",
-                  };
-                  const resultLabels: Record<GateEntryResult, string> = {
-                    allowed: "Allowed",
-                    blocked_duplicate: "Duplicate",
-                    blocked_unverified: "Unverified",
-                    blocked_face_fail: "Face fail",
-                    blocked_unknown: "Invalid",
-                  };
-                  return (
-                    <tr key={log.id} className="border-b border-slate-50 last:border-0">
-                      <td className="px-3 py-2 font-medium text-slate-800">{log.studentName}</td>
-                      <td className="px-3 py-2 text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                      <td className="px-3 py-2">
-                        {log.faceScore > 0 ? (
-                          <span className={`font-semibold ${log.faceVerified ? "text-emerald-600" : "text-rose-600"}`}>
-                            {log.faceScore}%
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className={`rounded-full px-2 py-0.5 font-semibold ${resultColors[log.result]}`}>
-                          {resultLabels[log.result]}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {logs.map((log) => (
+                  <tr key={log.id} className="border-b border-slate-50 last:border-0">
+                    <td className="px-3 py-2 font-medium text-slate-800">{log.studentName}</td>
+                    <td className="px-3 py-2 text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded-full px-2 py-0.5 font-semibold ${log.result === "allowed" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+                        {log.result === "allowed" ? "Allowed" : "Blocked"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </section>
       )}
-
-      {/* Fade-in animation */}
-      <style jsx>{`
-                @keyframes fadeInUp {
-                    from { opacity: 0; transform: translateY(16px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
     </div>
   );
 }
